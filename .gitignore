@@ -1,0 +1,22 @@
+# Build artifacts
+build/
+.xmake/
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+
+# LSP & Tooling
+compile_commands.json
+.clangd/
+.cache/
+
+# IDEs
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
