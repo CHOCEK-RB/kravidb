@@ -18,7 +18,7 @@ jobs:
       - name: Install Clang, Format & Linters
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang clang-format clang-tidy
+          sudo apt-get install -y clang clang-format clang-tidy g++-14 libstdc++-14-dev
 
       - name: Setup xmake
         uses: xmake-io/github-action-setup-xmake@v1
@@ -27,7 +27,7 @@ jobs:
 
       - name: Check code formatting
         run: |
-          find src tests -name "*.cpp" -o -name "*.cppm" | xargs clang-format --dry-run --Werror
+          find src tests -name "*.cpp" -o -name "*.cppm" | xargs -r clang-format --dry-run --Werror
 
       - name: Configure and build (Debug mode with ASan)
         run: |
@@ -36,7 +36,7 @@ jobs:
 
       - name: Run clang-tidy
         run: |
-          find src -name "*.cpp" -o -name "*.cppm" | xargs clang-tidy -p .
+          find src -name "*.cpp" -o -name "*.cppm" | xargs -r clang-tidy -p .
 
       - name: Run binary
         run: |
