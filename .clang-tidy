@@ -10,5 +10,5 @@ Checks: >
   performance-*,
   readability-*
 WarningsAsErrors: ""
-HeaderFilterRegex: ".*"
+HeaderFilterRegex: "^src/.*"
 FormatStyle: file

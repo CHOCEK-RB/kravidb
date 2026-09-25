@@ -34,6 +34,10 @@ jobs:
           xmake f -c -m debug --toolchain=clang
           xmake -v
 
+      - name: Run clang-tidy
+        run: |
+          find src -name "*.cpp" -o -name "*.cppm" | xargs clang-tidy -p .
+
       - name: Run binary
         run: |
           xmake run kravidb
