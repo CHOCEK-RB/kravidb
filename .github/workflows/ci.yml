@@ -34,7 +34,7 @@ jobs:
 
       - name: Configure and build (Debug mode with ASan)
         run: |
-          xmake f -c -m debug --toolchain=clang --sdk=/usr/lib/llvm-18
+          xmake f -c -m debug --toolchain=clang --sdk=/usr/lib/llvm-18 --runtimes=c++_shared
           xmake -v
 
       - name: Run clang-tidy
@@ -47,5 +47,5 @@ jobs:
 
       - name: Configure and build (Release mode)
         run: |
-          xmake f -c -m release --toolchain=clang --sdk=/usr/lib/llvm-18
+          xmake f -c -m release --toolchain=clang --sdk=/usr/lib/llvm-18 --runtimes=c++_shared
           xmake -v
