@@ -7,4 +7,7 @@ find src -name "*.cpp" -o -name "*.cppm" | xargs clang-format --dry-run --Werror
 echo "[pre-commit] Checking build with xmake..."
 xmake -q
 
+echo "[pre-commit] Running clang-tidy checks..."
+find src -name "*.cpp" -o -name "*.cppm" | xargs clang-tidy -p .
+
 echo "[pre-commit] All checks passed."

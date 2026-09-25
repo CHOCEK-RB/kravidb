@@ -44,4 +44,8 @@ find src tests -name "*.cpp" -o -name "*.cppm" | xargs clang-format --dry-run --
 xmake f -c -m debug
 xmake
 xmake run kravidb
+
+# 4. Run clang-tidy static analysis
+find src -name "*.cpp" -o -name "*.cppm" | xargs clang-tidy -p .
 ```
+
