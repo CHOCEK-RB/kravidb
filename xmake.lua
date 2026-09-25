@@ -3,6 +3,7 @@ set_version("0.1.0")
 
 add_rules("mode.debug", "mode.release")
 add_rules("plugin.compile_commands.autoupdate", { outputdir = "." })
+set_toolchains("clang")
 
 target("kravidb")
 set_kind("binary")
