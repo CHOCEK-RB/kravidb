@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: ["main", "dev"]
+  pull_request:
+    branches: ["main", "dev"]
+
+jobs:
+  build-and-test:
+    name: Build & Test (C++23)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Clang, Format & Linters
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang clang-format clang-tidy
+
+      - name: Setup xmake
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: latest
+
+      - name: Check code formatting
+        run: |
+          find src tests -name "*.cpp" -o -name "*.cppm" | xargs clang-format --dry-run --Werror
+
+      - name: Configure and build (Debug mode with ASan)
+        run: |
+          xmake f -c -m debug --toolchain=clang
+          xmake -v
+
+      - name: Run binary
+        run: |
+          xmake run kravidb
+
+      - name: Configure and build (Release mode)
+        run: |
+          xmake f -c -m release --toolchain=clang
+          xmake -v
