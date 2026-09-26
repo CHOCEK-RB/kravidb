@@ -30,7 +30,7 @@ jobs:
 
       - name: Check code formatting
         run: |
-          find src tests -name "*.cpp" -o -name "*.cppm" | xargs -r clang-format --dry-run --Werror
+          find src tests \( -name "*.cpp" -o -name "*.cppm" \) | xargs -r clang-format --dry-run --Werror
 
       - name: Configure and build (Debug mode with ASan)
         run: |
@@ -39,7 +39,7 @@ jobs:
 
       - name: Run clang-tidy
         run: |
-          find src -name "*.cpp" -o -name "*.cppm" | xargs -r clang-tidy -p .
+          find src tests \( -name "*.cpp" -o -name "*.cppm" \) | xargs -r clang-tidy -p .
 
       - name: Run binary
         run: |
