@@ -3,12 +3,13 @@ Checks: >
   -*,
   bugprone-*,
   -bugprone-exception-escape,
+  cert-*,
   clang-analyzer-*,
   cppcoreguidelines-*,
   modernize-*,
   -modernize-use-trailing-return-type,
   performance-*,
   readability-*
-WarningsAsErrors: ""
+WarningsAsErrors: "bugprone-*,cppcoreguidelines-*,cert-*"
 HeaderFilterRegex: "^src/.*"
 FormatStyle: file
