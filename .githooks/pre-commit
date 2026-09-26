@@ -2,12 +2,12 @@
 set -e
 
 echo "[pre-commit] Checking formatting with clang-format..."
-find src tests -name "*.cpp" -o -name "*.cppm" | xargs -r clang-format --dry-run --Werror
+find src tests \( -name "*.cpp" -o -name "*.cppm" \) | xargs -r clang-format --dry-run --Werror
 
 echo "[pre-commit] Checking build with xmake..."
 xmake -q
 
 echo "[pre-commit] Running clang-tidy checks..."
-find src tests -name "*.cpp" -o -name "*.cppm" | xargs -r clang-tidy -p .
+find src tests \( -name "*.cpp" -o -name "*.cppm" \) | xargs -r clang-tidy -p .
 
 echo "[pre-commit] All checks passed."

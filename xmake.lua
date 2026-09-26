@@ -18,6 +18,7 @@ add_includedirs("src")
 if is_mode("debug") then
 	set_symbols("debug")
 	set_optimize("none")
+	add_cxflags("-fno-omit-frame-pointer")
 	set_policy("build.sanitizer.address", true)
 	set_policy("build.sanitizer.undefined", true)
 elseif is_mode("release") then
