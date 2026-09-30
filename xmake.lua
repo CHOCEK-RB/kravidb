@@ -15,6 +15,9 @@ set_kind("binary")
 set_languages("c++23")
 set_warnings("all", "error")
 
+add_defines("_LIBCPP_DISABLE_DEPRECATION_WARNINGS")
+add_cxxflags("-Wno-deprecated-declarations")
+
 add_files("src/**.cpp")
 add_files("src/**.cppm")
 
