@@ -7,6 +7,9 @@ find src tests \( -name "*.cpp" -o -name "*.cppm" \) | xargs -r clang-format --d
 echo "[pre-commit] Checking build with xmake..."
 xmake -q
 
+echo "[pre-commit] Updating compile_commands.json..."
+xmake project -k compile_commands
+
 echo "[pre-commit] Running clang-tidy checks..."
 find src tests \( -name "*.cpp" -o -name "*.cppm" \) | xargs -r clang-tidy -p .
 
