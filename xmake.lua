@@ -3,7 +3,12 @@ set_version("0.1.0")
 
 add_rules("mode.debug", "mode.release")
 add_rules("plugin.compile_commands.autoupdate", { outputdir = "." })
-set_toolchains("clang")
+
+if is_plat("windows") then
+	set_toolchains("llvm")
+else
+	set_toolchains("clang")
+end
 
 target("kravidb")
 set_kind("binary")
