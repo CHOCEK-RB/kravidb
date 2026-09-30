@@ -57,6 +57,14 @@ class BTreeNode {
     return children_.size() == keys_.size() + 1;
   }
 
+  [[nodiscard]] std::size_t lower_bound_index(Key key, std::size_t& comparisons) const {
+    const auto position = std::ranges::lower_bound(keys_, key, [&comparisons](Key lhs, Key rhs) {
+      ++comparisons;
+      return lhs < rhs;
+    });
+    return static_cast<std::size_t>(std::distance(keys_.begin(), position));
+  }
+
   [[nodiscard]] std::vector<Key>& keys() noexcept { return keys_; }
   [[nodiscard]] const std::vector<Key>& keys() const noexcept { return keys_; }
 
