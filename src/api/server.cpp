@@ -23,12 +23,14 @@ inline constexpr std::size_t seed_bio_length = 255;
 // Pagina servida desde el directorio de build del frontend, si existe.
 constexpr std::string_view web_root = "web/dist";
 
-// Escribe una traza del servidor en stdout. Usa un stream sincronizado para
-// que las lineas de los hilos del servidor no se entremezclen, y vacia el
-// buffer para que las trazas aparezcan aunque la salida este redirigida.
+// Escribe una traza del servidor en stdout. Un mutex evita que las lineas de
+// los hilos del servidor se entremezclen (std::osyncstream no existe en
+// libc++, que es la stdlib de CI) y se vacia el buffer para que las trazas
+// aparezcan aunque la salida este redirigida.
 void log_line(std::string_view message) {
-  std::osyncstream stream{std::cout};
-  stream << "[api] " << message << '\n' << std::flush;
+  static std::mutex log_mutex;
+  const std::scoped_lock lock{log_mutex};
+  std::cout << "[api] " << message << '\n' << std::flush;
 }
 
 // Aplica a todas las respuestas las cabeceras de CORS.
