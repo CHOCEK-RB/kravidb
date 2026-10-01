@@ -49,9 +49,14 @@ add_defines("_LIBCPP_DISABLE_DEPRECATION_WARNINGS")
 add_cxxflags("-Wno-deprecated-declarations")
 
 add_files("tests/**.cpp")
-add_files("src/**.cppm")
-remove_files("src/api/**")
-add_files("src/index/**.cpp", "src/storage/**.cpp")
+add_files(
+    "src/kravidb.cppm",
+    "src/storage/**.cppm",
+    "src/index/**.cppm",
+    "src/api/json.cppm",
+    "src/api/serialization.cppm"
+)
+add_files("src/index/**.cpp", "src/storage/**.cpp", "src/api/json.cpp", "src/api/serialization.cpp")
 
 add_includedirs("src")
 add_packages("gtest")
