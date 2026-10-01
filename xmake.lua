@@ -12,6 +12,7 @@ end
 
 add_requires("gtest", { system = false, configs = { main = true } })
 add_requires("benchmark", { system = false })
+add_requires("cpp-httplib")
 
 target("kravidb")
 set_kind("binary")
@@ -23,6 +24,7 @@ add_cxxflags("-Wno-deprecated-declarations")
 
 add_files("src/**.cpp")
 remove_files("src/benchmark.cpp")
+remove_files("src/api/**")
 add_files("src/**.cppm")
 
 add_includedirs("src")
@@ -48,6 +50,7 @@ add_cxxflags("-Wno-deprecated-declarations")
 
 add_files("tests/**.cpp")
 add_files("src/**.cppm")
+remove_files("src/api/**")
 add_files("src/index/**.cpp", "src/storage/**.cpp")
 
 add_includedirs("src")
@@ -76,6 +79,7 @@ add_cxxflags("-Wno-deprecated-declarations")
 
 add_files("src/benchmark.cpp")
 add_files("src/**.cppm")
+remove_files("src/api/**")
 add_files("src/index/**.cpp", "src/storage/**.cpp")
 
 add_includedirs("src")
@@ -86,6 +90,32 @@ if is_mode("debug") then
 	set_symbols("debug")
 	set_optimize("none")
 	add_cxflags("-fno-omit-frame-pointer")
+elseif is_mode("release") then
+	set_symbols("hidden")
+	set_optimize("fastest")
+end
+
+target("kravidb_api")
+set_kind("binary")
+set_languages("c++23")
+set_warnings("all", "error")
+
+add_defines("_LIBCPP_DISABLE_DEPRECATION_WARNINGS")
+add_cxxflags("-Wno-deprecated-declarations")
+
+add_files("src/api/**.cpp")
+add_files("src/**.cppm")
+add_files("src/index/**.cpp", "src/storage/**.cpp")
+
+add_includedirs("src")
+add_packages("cpp-httplib")
+
+if is_mode("debug") then
+	set_symbols("debug")
+	set_optimize("none")
+	add_cxflags("-fno-omit-frame-pointer")
+	set_policy("build.sanitizer.address", true)
+	set_policy("build.sanitizer.undefined", true)
 elseif is_mode("release") then
 	set_symbols("hidden")
 	set_optimize("fastest")
