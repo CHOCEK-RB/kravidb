@@ -2,6 +2,7 @@ import type {
   ApiClient,
   BTreeKey,
   BTreeNode,
+  EngineConfig,
   InsertResult,
   PageHeader,
   PageSlot,
@@ -180,6 +181,22 @@ export class MockEngine implements ApiClient {
       }
     }
 
+    const inserted = this.insertPair(key, payload)
+
+    return {
+      split_occurred: this.splitCount > 0,
+      promoted_key: this.lastPromotedKey,
+      new_root_created: inserted.new_root_created,
+      target_page_id: inserted.page_id,
+      target_slot_id: inserted.slot_id,
+    }
+  }
+
+  // Inserta una tupla nueva (pagina + arbol) sin comprobar duplicados.
+  private insertPair(
+    key: number,
+    payload: string,
+  ): { page_id: number; slot_id: number; new_root_created: boolean } {
     const loc = this.appendToSlottedPage(key, payload)
     const keyItem: BTreeKey = {
       key,
@@ -211,13 +228,7 @@ export class MockEngine implements ApiClient {
       this.insertNonFull(this.root, keyItem)
     }
 
-    return {
-      split_occurred: this.splitCount > 0,
-      promoted_key: this.lastPromotedKey,
-      new_root_created: newRootCreated,
-      target_page_id: loc.page_id,
-      target_slot_id: loc.slot_id,
-    }
+    return { page_id: loc.page_id, slot_id: loc.slot_id, new_root_created: newRootCreated }
   }
 
   public async searchKey(searchKey: number): Promise<SearchMetrics> {
@@ -289,6 +300,38 @@ export class MockEngine implements ApiClient {
     return JSON.parse(JSON.stringify(page))
   }
 
+  public async getConfig(): Promise<EngineConfig> {
+    return { degree: this.degree, page_size: 4096 }
+  }
+
+  public async setDegree(degree: number): Promise<EngineConfig> {
+    // Reconstruye el arbol con el nuevo grado conservando las tuplas.
+    const rows = this.collectTuples()
+    this.degree = degree
+    this.root = this.createEmptyNode(true)
+    this.pages.clear()
+    this.currentPageId = 1
+    this.totalTuplesCount = 0
+    this.splitCount = 0
+    this.lastPromotedKey = undefined
+    this.initPage(1)
+    for (const row of rows) {
+      this.insertPair(row.key, row.value)
+    }
+    return this.getConfig()
+  }
+
+  // Pares clave/valor en orden de insercion, para reconstruir el arbol.
+  private collectTuples(): { key: number; value: string }[] {
+    const rows: { key: number; value: string }[] = []
+    for (const page of this.pages.values()) {
+      for (const tuple of page.tuples) {
+        rows.push({ key: tuple.key, value: tuple.data })
+      }
+    }
+    return rows
+  }
+
   public async reset(): Promise<void> {
     this.root = this.createEmptyNode(true)
     this.pages.clear()
@@ -314,26 +357,7 @@ export class MockEngine implements ApiClient {
       val: JSON.stringify({ id: key, table: 'users', name, bio: 'x'.repeat(255) }),
     }))
     for (const item of seeds) {
-      const loc = this.appendToSlottedPage(item.key, item.val)
-      const bkey: BTreeKey = {
-        key: item.key,
-        value: item.val,
-        page_id: loc.page_id,
-        slot_id: loc.slot_id,
-      }
-      const t = this.degree
-      if (this.root.keys.length === 2 * t - 1) {
-        const oldRoot = this.root
-        const newRoot = this.createEmptyNode(false)
-        newRoot.children.push(oldRoot)
-        this.splitChild(newRoot, 0)
-        this.root = newRoot
-        let idx = 0
-        if (newRoot.keys[0].key < bkey.key) idx += 1
-        this.insertNonFull(newRoot.children[idx], bkey)
-      } else {
-        this.insertNonFull(this.root, bkey)
-      }
+      this.insertPair(item.key, item.val)
     }
   }
 }

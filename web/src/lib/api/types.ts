@@ -75,10 +75,17 @@ export interface InsertResult {
   target_slot_id: number
 }
 
+export interface EngineConfig {
+  degree: number
+  page_size: number
+}
+
 export interface ApiClient {
   getBTree(): Promise<BTreeNode>
   insertKey(key: number, payload: string): Promise<InsertResult>
   searchKey(key: number): Promise<SearchMetrics>
   getPage(pageId: number): Promise<SlottedPageData>
+  getConfig(): Promise<EngineConfig>
+  setDegree(degree: number): Promise<EngineConfig>
   reset(): Promise<void>
 }
