@@ -32,6 +32,12 @@ class StorageEngine final {
   /// \brief Acceso al indice.
   [[nodiscard]] auto index() noexcept -> index::Index& { return btree_; }
 
+  /// \brief Acceso concreto al arbol B, para estadisticas de insercion y trazas.
+  [[nodiscard]] auto btree() noexcept -> index::BTree& { return btree_; }
+
+  /// \brief Acceso concreto de solo lectura al arbol B.
+  [[nodiscard]] auto btree() const noexcept -> const index::BTree& { return btree_; }
+
   /// \brief Acceso a la tabla.
   [[nodiscard]] auto table() noexcept -> Table& { return table_; }
 
