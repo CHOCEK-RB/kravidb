@@ -182,17 +182,38 @@ export class EngineStore {
     // En modo masa no se materializan las losas: con t=2 serían miles.
     if (this.massMode) return
     const ids = this.pageIds
-    const loaded = await Promise.all(ids.map((id) => api.getPage(id)))
+    // Tolerante a 404: al reconstruir el árbol con otro grado las páginas
+    // pueden desaparecer y no debe tumbar el refresco completo.
+    const results = await Promise.all(
+      ids.map(async (id) => {
+        try {
+          return await api.getPage(id)
+        } catch {
+          return null
+        }
+      }),
+    )
+    const loaded = results.filter((page): page is SlottedPageData => page !== null)
     this.pages = loaded
+    if (!loaded.some((p) => p.page_id === this.selectedPageId)) {
+      this.selectedPageId = loaded.at(-1)?.page_id ?? 1
+    }
     if (this.currentPage) {
-      this.currentPage = loaded.find((p) => p.page_id === this.selectedPageId) ?? this.currentPage
+      this.currentPage =
+        loaded.find((p) => p.page_id === this.selectedPageId) ?? loaded.at(-1) ?? null
     }
   }
 
   public async selectPage(pageId: number, slotId: number | null = null) {
     this.selectedPageId = pageId
     this.selectedSlotId = slotId
-    this.currentPage = await api.getPage(pageId)
+    try {
+      this.currentPage = await api.getPage(pageId)
+    } catch {
+      // La página ya no existe (reconstrucción/recarga): recae en el refresco.
+      await this.refreshPages()
+      return
+    }
     if (!this.pages.some((p) => p.page_id === pageId)) {
       await this.refreshPages()
     }
