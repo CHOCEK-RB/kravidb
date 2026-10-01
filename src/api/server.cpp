@@ -88,7 +88,8 @@ auto parse_int(std::string_view text) -> std::optional<std::int64_t> {
   std::int64_t value = 0;
   const auto span = text.substr(start);
   const auto result = std::from_chars(span.begin(), span.end(), value);
-  if (result.ec != std::errc{}) {
+  // 0 = sin error. Se evita std::errc{} porque clang-tidy lo marca bajo libc++.
+  if (static_cast<int>(result.ec) != 0) {
     return std::nullopt;
   }
   return value;
