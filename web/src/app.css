@@ -1,0 +1,189 @@
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700;800&display=swap");
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #0c0b16;
+  --color-panel: #18152b;
+  --color-line: #2e2652;
+  --color-ink: #f8f6fd;
+  --color-copper: #ff7ebb;
+  --color-sakura: #ff7ebb;
+  --color-lavender: #c084fc;
+  --color-mint: #48e5c2;
+  --color-peach: #ffaa80;
+  --color-ember: #ff6384;
+  --font-ui: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+:root {
+  /* Identidad "Cute Cyber-Dark":
+     Fondo terciopelo ciruela + acentos sakura, lavanda, menta pastel y melocotón */
+  --bg: #0c0b16;
+  --bg-2: #141224;
+  --panel: #18152b;
+  --panel-2: #211c3a;
+  --panel-3: #2a234b;
+  --line: #2e2652;
+  --line-2: #413673;
+  --line-3: #58499c;
+
+  --ink: #f8f6fd;
+  --ink-dim: #c5bcdb;
+  --ink-mute: #8579a3;
+
+  --sakura: #ff7ebb;
+  --sakura-hi: #ffd4e8;
+  --sakura-lo: #9e3668;
+
+  --copper: var(--sakura);
+  --copper-hi: var(--sakura-hi);
+  --copper-lo: var(--sakura-lo);
+
+  --lavender: #c084fc;
+  --lavender-hi: #ebd5ff;
+  --lavender-lo: #6932a8;
+
+  --mint: #48e5c2;
+  --mint-hi: #b8fff0;
+
+  --peach: #ffaa80;
+  --peach-hi: #fed7aa;
+
+  --gold: #fde047;
+  --ember: #ff6384;
+
+  --sage: #4ade80;
+  --ok: #4ade80;
+  --warn: #fde047;
+  --hot: #ff6384;
+
+  --font-ui: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden;
+}
+
+/* Grano fino: textura sutil. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.3;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.4'/%3E%3C/svg%3E");
+}
+
+#app {
+  position: relative;
+  z-index: 1;
+}
+
+h1,
+h2,
+h3,
+p,
+ul,
+figure {
+  margin: 0;
+}
+
+button {
+  font-family: inherit;
+}
+
+/* Micro-scrollbars a juego con el tema cute dark */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #362e54;
+  border-radius: 99px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #4f437c;
+  background-clip: padding-box;
+}
+
+/* Cabeceras de panel reutilizables */
+.panel {
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--panel);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 16px 36px -20px rgba(4, 3, 10, 0.8);
+}
+
+/* Filo cromático superior: cada panel declara su matiz con --tint. */
+.panel::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: 16px;
+  right: 16px;
+  height: 2px;
+  border-radius: 0 0 3px 3px;
+  background: linear-gradient(90deg, transparent, var(--tint, var(--line-2)), transparent);
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+.panel-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+}
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
