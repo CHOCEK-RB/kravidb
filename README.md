@@ -59,3 +59,25 @@ xmake run kravidb
 find src tests \( -name "*.cpp" -o -name "*.cppm" \) | xargs clang-tidy -p .
 ```
 
+## Documentation
+
+The public API of the modules is documented with Doxygen comments (Spanish)
+and published as Markdown in `docs/md`. Regenerate it with:
+
+```bash
+xmake docs
+```
+
+This runs `doxygen Doxyfile` (XML only, into `docs/xml`) and then
+`scripts/doxygen_to_md.py`, which converts the XML into one Markdown file per
+module, namespace, class and struct, plus the index `docs/md/index.md`. Only
+the `.cppm` module interfaces are documented; the implementation units and the
+tests are out of scope.
+
+Raw commands (equivalent to the task):
+
+```bash
+doxygen Doxyfile
+python3 scripts/doxygen_to_md.py
+```
+

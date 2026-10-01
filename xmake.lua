@@ -148,3 +148,20 @@ set_menu({
 	description = "Ejecuta formato, build y clang-tidy (igual que el hook y CI)",
 })
 task_end()
+
+task("docs")
+set_category("plugin")
+on_run(function()
+	print("[docs] Generando XML con Doxygen...")
+	os.exec("doxygen Doxyfile")
+
+	print("[docs] Convirtiendo XML a Markdown...")
+	os.execv("python3", { "scripts/doxygen_to_md.py" })
+
+	print("[docs] Documentacion escrita en docs/md.")
+end)
+set_menu({
+	usage = "xmake docs",
+	description = "Genera la documentacion Markdown desde los modulos (Doxygen XML -> Markdown)",
+})
+task_end()
