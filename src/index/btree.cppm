@@ -21,6 +21,52 @@ struct SearchResult {
   SearchStats stats{};
 };
 
+/// \brief Paso individual del camino seguido por una busqueda.
+struct SearchPathStep {
+  /// \brief Comparacion entre la clave buscada y la clave examinada.
+  enum class Comparison : std::uint8_t {
+    /// \brief La clave buscada es menor que la examinada.
+    Less,
+    /// \brief La clave buscada coincide con la examinada.
+    Equal,
+    /// \brief La clave buscada es mayor que la examinada.
+    Greater,
+  };
+
+  /// \brief Identificador del nodo examinado.
+  std::size_t node_id{0};
+
+  /// \brief Posicion examinada dentro de las claves del nodo.
+  std::size_t key_index{0};
+
+  /// \brief Resultado de la comparacion en esa posicion.
+  Comparison comparison{Comparison::Less};
+};
+
+/// \brief Traza de una busqueda: resultado, camino recorrido y estadisticas.
+struct SearchTrace {
+  /// \brief Localizador encontrado, o `std::nullopt` si la clave no existe.
+  std::optional<RowID> row_id;
+
+  /// \brief Pasos del camino, en orden de descenso.
+  std::vector<SearchPathStep> path;
+
+  /// \brief Estadisticas de la busqueda.
+  SearchStats stats{};
+};
+
+/// \brief Rastro estructural de una insercion.
+struct InsertStats {
+  /// \brief Indica si la insercion provoco al menos una division de nodo.
+  bool split_occurred{false};
+
+  /// \brief Ultima clave promovida al padre, si hubo division.
+  std::optional<Key> promoted_key;
+
+  /// \brief Indica si la raiz cambio porque el arbol crecio en altura.
+  bool new_root_created{false};
+};
+
 /// \brief Arbol B clasico (CLRS) que implementa el contrato `Index`.
 ///
 /// Cada nodo guarda como maximo `2t - 1` claves y tiene como maximo `2t` hijos,
@@ -86,6 +132,17 @@ class BTree final : public Index {
   /// \return El localizador encontrado y los contadores de la busqueda.
   [[nodiscard]] auto search_with_stats(Key key) const -> SearchResult;
 
+  /// \brief Busca una clave reconstruyendo el camino seguido por el descenso.
+  /// \param key Clave buscada.
+  /// \return El localizador, los pasos del camino y los contadores de la busqueda.
+  [[nodiscard]] auto search_trace(Key key) const -> SearchTrace;
+
+  /// \brief Inserta una clave registrando el rastro estructural de la operacion.
+  /// \param key Clave a insertar.
+  /// \param row_id Localizador asociado.
+  /// \return Si hubo division, la ultima clave promovida y si crecio la altura.
+  auto insert_with_stats(Key key, RowID row_id) -> InsertStats;
+
   private:
   /// \brief Grado minimo `t` del arbol.
   int degree_;
@@ -93,11 +150,20 @@ class BTree final : public Index {
   /// \brief Propietario de todos los nodos del arbol.
   std::vector<std::unique_ptr<BTreeNode>> pool_;
 
+  /// \brief Siguiente identificador de nodo a asignar.
+  std::size_t next_node_id_{0};
+
   /// \brief Puntero no propietario a la raiz; nulo si el arbol esta vacio.
   BTreeNode* root_;
 
   /// \brief Estadisticas de la ultima busqueda, mutables desde `search` (const).
   mutable SearchStats last_search_stats_{};
+
+  /// \brief Divisiones producidas por la ultima insercion instrumentada.
+  std::size_t splits_in_last_insert_{0};
+
+  /// \brief Ultima clave promovida por la ultima insercion instrumentada.
+  std::optional<Key> last_split_promoted_key_;
 
   /// \brief Divide el hijo lleno `child`, promoviendo su clave media al padre.
   /// \param parent Nodo padre de `child`.

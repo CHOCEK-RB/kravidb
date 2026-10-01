@@ -9,15 +9,21 @@ BTree::BTree(int degree) : degree_{degree}, root_{create_node(true)} {}
 BTree::BTree(BTree&& other) noexcept
     : degree_{other.degree_},
       pool_{std::move(other.pool_)},
+      next_node_id_{other.next_node_id_},
       root_{std::exchange(other.root_, nullptr)},
-      last_search_stats_{other.last_search_stats_} {}
+      last_search_stats_{other.last_search_stats_},
+      splits_in_last_insert_{other.splits_in_last_insert_},
+      last_split_promoted_key_{other.last_split_promoted_key_} {}
 
 auto BTree::operator=(BTree&& other) noexcept -> BTree& {
   if (this != &other) {
     degree_ = other.degree_;
     pool_ = std::move(other.pool_);
+    next_node_id_ = other.next_node_id_;
     root_ = std::exchange(other.root_, nullptr);
     last_search_stats_ = other.last_search_stats_;
+    splits_in_last_insert_ = other.splits_in_last_insert_;
+    last_split_promoted_key_ = other.last_split_promoted_key_;
   }
   return *this;
 }
@@ -27,6 +33,8 @@ void BTree::clear() {
   root_ = nullptr;
   root_ = create_node(true);
   last_search_stats_ = SearchStats{};
+  splits_in_last_insert_ = 0;
+  last_split_promoted_key_.reset();
 }
 
 auto BTree::empty() const noexcept -> bool {
@@ -73,6 +81,52 @@ auto BTree::search(Key key) const -> std::optional<RowID> {
   return result.row_id;
 }
 
+auto BTree::search_trace(Key key) const -> SearchTrace {
+  SearchTrace trace{};
+  const BTreeNode* node = root_;
+
+  while (node != nullptr) {
+    ++trace.stats.node_accesses;
+
+    const std::size_t index = node->lower_bound_index(key, trace.stats.key_comparisons);
+    const std::size_t count = node->key_count();
+    const std::size_t last = count == 0 ? 0 : count - 1;
+    const std::size_t checked = index >= count ? last : index;
+
+    if (index < count) {
+      ++trace.stats.key_comparisons;
+      const Key probe = node->keys().at(index);
+      if (probe == key) {
+        trace.path.push_back(SearchPathStep{
+            .node_id = node->id(),
+            .key_index = checked,
+            .comparison = SearchPathStep::Comparison::Equal,
+        });
+        trace.row_id = node->row_ids().at(index);
+        return trace;
+      }
+      trace.path.push_back(SearchPathStep{
+          .node_id = node->id(),
+          .key_index = checked,
+          .comparison =
+              probe > key ? SearchPathStep::Comparison::Less : SearchPathStep::Comparison::Greater,
+      });
+    } else {
+      trace.path.push_back(SearchPathStep{
+          .node_id = node->id(),
+          .key_index = checked,
+          .comparison = SearchPathStep::Comparison::Greater,
+      });
+    }
+
+    if (node->is_leaf() || index >= node->child_count()) {
+      break;
+    }
+    node = node->children().at(index);
+  }
+  return trace;
+}
+
 void BTree::insert(Key key, RowID row_id) {
   BTreeNode* old_root = root_;
   if (old_root->is_full()) {
@@ -84,6 +138,20 @@ void BTree::insert(Key key, RowID row_id) {
   } else {
     insert_non_full(old_root, key, row_id);
   }
+}
+
+auto BTree::insert_with_stats(Key key, RowID row_id) -> InsertStats {
+  splits_in_last_insert_ = 0;
+  last_split_promoted_key_.reset();
+  const BTreeNode* const old_root = root_;
+
+  insert(key, row_id);
+
+  return InsertStats{
+      .split_occurred = splits_in_last_insert_ > 0,
+      .promoted_key = last_split_promoted_key_,
+      .new_root_created = root_ != old_root,
+  };
 }
 
 void BTree::split_child(BTreeNode* parent, std::size_t index, BTreeNode* child) {
@@ -112,6 +180,9 @@ void BTree::split_child(BTreeNode* parent, std::size_t index, BTreeNode* child) 
   parent->children().insert(parent->children().begin() + child_offset, new_child);
   parent->keys().insert(parent->keys().begin() + key_offset, promoted_key);
   parent->row_ids().insert(parent->row_ids().begin() + key_offset, promoted_row_id);
+
+  ++splits_in_last_insert_;
+  last_split_promoted_key_ = promoted_key;
 }
 
 void BTree::insert_non_full(BTreeNode* node, Key key, RowID row_id) {
@@ -136,7 +207,7 @@ void BTree::insert_non_full(BTreeNode* node, Key key, RowID row_id) {
 }
 
 auto BTree::create_node(bool leaf) -> BTreeNode* {
-  pool_.push_back(std::make_unique<BTreeNode>(degree_, leaf));
+  pool_.push_back(std::make_unique<BTreeNode>(degree_, leaf, next_node_id_++));
   return pool_.back().get();
 }
 
