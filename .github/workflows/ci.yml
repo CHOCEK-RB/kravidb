@@ -38,7 +38,7 @@ jobs:
 
       - name: Configure and build (Debug mode with ASan)
         run: |
-          xmake f -c -m debug --toolchain=clang --sdk=/usr/lib/llvm-22 --runtimes=c++_shared
+          xmake f -c -m debug --toolchain=clang --sdk=/usr/lib/llvm-22 --runtimes=c++_shared --ldflags=-lc++abi
           xmake -v
 
       - name: Lint (format + clang-tidy)
@@ -50,5 +50,5 @@ jobs:
 
       - name: Configure and build (Release mode)
         run: |
-          xmake f -c -m release --toolchain=clang --sdk=/usr/lib/llvm-22 --runtimes=c++_shared
+          xmake f -c -m release --toolchain=clang --sdk=/usr/lib/llvm-22 --runtimes=c++_shared --ldflags=-lc++abi
           xmake -v
