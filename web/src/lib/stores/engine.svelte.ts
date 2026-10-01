@@ -26,6 +26,13 @@ export interface LocateMark {
   at: number
 }
 
+/** Muestra periódica de la carga masiva: alimenta el trazado de throughput en vivo. */
+export interface BulkSample {
+  count: number
+  opsPerSec: number
+  splits: number
+}
+
 /** Estado de una carga masiva: progreso, divisiones y throughput medido. */
 export interface BulkState {
   current: number
@@ -34,6 +41,7 @@ export interface BulkState {
   elapsedMs: number
   opsPerSec: number
   done: boolean
+  samples: BulkSample[]
 }
 
 /** Campo de la anatomía de tupla que el cursor señala (sincroniza con la lente de bytes). */
@@ -374,7 +382,8 @@ export class EngineStore {
     this.batch = null
     const started = performance.now()
     let splits = 0
-    this.bulk = { current: 0, total, splits: 0, elapsedMs: 0, opsPerSec: 0, done: false }
+    const samples: BulkSample[] = []
+    this.bulk = { current: 0, total, splits: 0, elapsedMs: 0, opsPerSec: 0, done: false, samples }
     this.addLog(
       'info',
       `Carga masiva [N = ${total.toLocaleString('es-ES')}]`,
@@ -397,44 +406,71 @@ export class EngineStore {
       order[j] = tmp
     }
 
+    // Claves y cargas útiles precalculadas: el bucle sólo mide la ida y vuelta HTTP.
+    const items = order.map((rank) => {
+      const key = 100000 + rank
+      return {
+        key,
+        payload: `{"id":${key},"table":"users","name":"row-${key}","bio":"${'x'.repeat(120)}"}`,
+      }
+    })
+
     const CHUNK = 400
+    // Los navegadores limitan a ~6 conexiones por origen en HTTP/1.1: 6 obreros es el óptimo.
+    const CONCURRENCY = 6
     let current = 0
     try {
       while (current < total) {
         const end = Math.min(current + CHUNK, total)
-        for (; current < end; current += 1) {
-          const key = 100000 + order[current]
-          const payload = `{"id":${key},"table":"users","name":"row-${key}","bio":"${'x'.repeat(120)}"}`
-          const res = await api.insertKey(key, payload)
-          if (res.split_occurred) splits += 1
+        let cursor = current
+        const worker = async () => {
+          while (cursor < end) {
+            const item = items[cursor]
+            cursor += 1
+            if (!item) continue
+            const res = await api.insertKey(item.key, item.payload)
+            if (res.split_occurred) splits += 1
+          }
         }
+        const workers: Promise<void>[] = []
+        for (let index = 0; index < CONCURRENCY; index += 1) {
+          workers.push(worker())
+        }
+        await Promise.all(workers)
+        current = end
         const elapsed = performance.now() - started
+        const opsPerSec = Math.round((current / Math.max(1, elapsed)) * 1000)
+        samples.push({ count: current, opsPerSec, splits })
         this.bulk = {
           current,
           total,
           splits,
           elapsedMs: elapsed,
-          opsPerSec: Math.round((current / Math.max(1, elapsed)) * 1000),
+          opsPerSec,
           done: false,
+          samples: [...samples],
         }
         await new Promise((r) => setTimeout(r, 0))
       }
 
       await this.refreshTree()
       const elapsed = performance.now() - started
+      const opsPerSec = Math.round((total / Math.max(1, elapsed)) * 1000)
+      samples.push({ count: total, opsPerSec, splits })
       this.bulk = {
         current: total,
         total,
         splits,
         elapsedMs: elapsed,
-        opsPerSec: Math.round((total / Math.max(1, elapsed)) * 1000),
+        opsPerSec,
         done: true,
+        samples: [...samples],
       }
       this.massMode = true
       this.addLog(
         'insert',
         'Carga masiva completada',
-        `${total.toLocaleString('es-ES')} tuplas en ${Math.round(elapsed)} ms · ${splits.toLocaleString('es-ES')} divisiones · ${this.bulk.opsPerSec.toLocaleString('es-ES')} ops/s.`,
+        `${total.toLocaleString('es-ES')} tuplas en ${Math.round(elapsed)} ms · ${splits.toLocaleString('es-ES')} divisiones · ${opsPerSec.toLocaleString('es-ES')} ops/s.`,
       )
     } finally {
       this.isLoading = false
