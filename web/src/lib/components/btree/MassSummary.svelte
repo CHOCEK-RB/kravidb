@@ -9,10 +9,11 @@
     nodes: number
     height: number
     bulk: BulkState | null
+    degree?: number
     onReset: () => void | Promise<unknown>
   }
 
-  let { tree, keys, nodes, height, bulk, onReset }: Props = $props()
+  let { tree, keys, nodes, height, bulk, degree = 2, onReset }: Props = $props()
 
   const nf = new Intl.NumberFormat('es-ES')
 
@@ -48,7 +49,7 @@
         >{nf.format(Math.round(bulk?.elapsedMs ?? 0))} ms</span
       >
     </div>
-    <div class="stat"><span class="k">Grado</span><span class="v">t = 2</span></div>
+    <div class="stat"><span class="k">Grado</span><span class="v">t = {degree}</span></div>
   </div>
 
   <div class="schematic">
