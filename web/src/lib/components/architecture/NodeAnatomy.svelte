@@ -41,18 +41,22 @@
     </div>
 
     <div class="diagram" aria-hidden="true">
-      <div class="keys">
-        {#each cells as k, i (i)}
-          <span class="kcell" class:filled={k !== null}>
-            <span class="kval">{k ? k.key : 'libre'}</span>
-            {#if k}<span class="kpos">P{k.page_id}:S{k.slot_id}</span>{/if}
-          </span>
-        {/each}
-      </div>
-      <div class="ptrs" class:leaf={isLeaf}>
-        {#each pointers as p, i (i)}
-          <span class="ptr" class:filled={p !== null}>{isLeaf ? '·' : p ? '▼' : '—'}</span>
-        {/each}
+      <div class="scroll">
+        <div class="track">
+          <div class="keys">
+            {#each cells as k, i (i)}
+              <span class="kcell" class:filled={k !== null}>
+                <span class="kval">{k ? k.key : 'libre'}</span>
+                {#if k}<span class="kpos">P{k.page_id}:S{k.slot_id}</span>{/if}
+              </span>
+            {/each}
+          </div>
+          <div class="ptrs" class:leaf={isLeaf}>
+            {#each pointers as p, i (i)}
+              <span class="ptr" class:filled={p !== null}>{isLeaf ? '·' : p ? '▼' : '—'}</span>
+            {/each}
+          </div>
+        </div>
       </div>
       <p class="ptr-note">
         {isLeaf
@@ -131,13 +135,37 @@
     padding: 16px;
     border-bottom: 1px solid var(--line);
   }
+  .scroll {
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 6px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-3) transparent;
+  }
+  .scroll::-webkit-scrollbar {
+    height: 8px;
+  }
+  .scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scroll::-webkit-scrollbar-thumb {
+    border-radius: 99px;
+    background: var(--line-3);
+  }
+  .scroll::-webkit-scrollbar-thumb:hover {
+    background: var(--lavender);
+  }
+  .track {
+    width: max-content;
+    min-width: 100%;
+  }
   .keys {
     display: flex;
     gap: 6px;
   }
   .kcell {
-    flex: 1;
-    min-width: 0;
+    flex: 1 0 74px;
+    min-width: 74px;
     display: flex;
     flex-direction: column;
     align-items: center;
