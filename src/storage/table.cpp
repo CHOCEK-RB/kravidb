@@ -7,13 +7,11 @@ namespace kravidb::storage {
 
 void Table::insert(const Tuple& tuple) {
   if (tuple.field_count() == 0) {
-    // NOLINTNEXTLINE(bugprone-std-exception-baseclass)
     throw std::invalid_argument{"Table: la tupla no puede estar vacia"};
   }
 
   const auto* key_ptr = std::get_if<std::int64_t>(&tuple.fields().front());
   if (key_ptr == nullptr) {
-    // NOLINTNEXTLINE(bugprone-std-exception-baseclass)
     throw std::invalid_argument{"Table: el primer campo (PK) debe ser de tipo Int"};
   }
 
