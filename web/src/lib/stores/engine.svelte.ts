@@ -68,6 +68,8 @@ export class EngineStore {
   public massMode = $state<boolean>(false)
   /** Campo resaltado en el panel de anatomía (sincroniza con la lente de bytes). */
   public archField = $state<ArchField | null>(null)
+  /** Grado mínimo del árbol: cada nodo guarda hasta 2t-1 claves. */
+  public degree = $state<number>(2)
   public playbackSpeed = $state<number>(1)
   public isLoading = $state<boolean>(false)
   public logs = $state<LogEntry[]>([])
@@ -78,7 +80,18 @@ export class EngineStore {
   private locateTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor() {
-    void this.init()
+    void this.bootstrap()
+  }
+
+  /** Lee la configuracion del motor y arranca el estado inicial. */
+  private async bootstrap() {
+    try {
+      const config = await api.getConfig()
+      this.degree = config.degree
+    } catch {
+      // Sin configuracion disponible se conserva el grado por defecto.
+    }
+    await this.init()
   }
 
   private getTime(): string {
@@ -152,7 +165,7 @@ export class EngineStore {
     this.addLog(
       'info',
       'Motor Inicializado',
-      'Árbol B (t=2) y buffer de páginas de 4 KB cargados en memoria.',
+      `Árbol B (t=${this.degree}) y buffer de páginas de 4 KB cargados en memoria.`,
     )
   }
 
@@ -208,7 +221,7 @@ export class EngineStore {
         this.addLog(
           'split',
           `División de Nodo [Clave ${key}]`,
-          `Nodo saturado (2t-1 = 3 claves). Mediana ${median} promovida al padre. Nueva raíz: ${result.new_root_created ? 'sí' : 'no'}.`,
+          `Nodo saturado (2t-1 = ${2 * this.degree - 1} claves). Mediana ${median} promovida al padre. Nueva raíz: ${result.new_root_created ? 'sí' : 'no'}.`,
         )
       } else {
         this.addLog(
@@ -401,6 +414,36 @@ export class EngineStore {
         'insert',
         'Carga masiva completada',
         `${total.toLocaleString('es-ES')} tuplas en ${Math.round(elapsed)} ms · ${splits.toLocaleString('es-ES')} divisiones · ${this.bulk.opsPerSec.toLocaleString('es-ES')} ops/s.`,
+      )
+    } finally {
+      this.isLoading = false
+    }
+  }
+
+  /** Reconstruye el árbol con otro grado t conservando las tuplas almacenadas. */
+  public async setDegree(degree: number) {
+    if (degree === this.degree || this.isLoading) {
+      return
+    }
+    this.isLoading = true
+    try {
+      const config = await api.setDegree(degree)
+      this.degree = config.degree
+      this.searchMetrics = null
+      this.activeStepIndex = -1
+      this.highlightedNodeId = null
+      this.highlightedKey = null
+      this.lastSplitOccurred = false
+      this.promotedKey = null
+      this.lastNewRoot = false
+      this.located = null
+      this.selectedSlotId = null
+      await this.refreshTree()
+      await this.refreshPages()
+      this.addLog(
+        'info',
+        `Árbol reconstruido con t = ${this.degree}`,
+        `Capacidad por nodo: ${2 * this.degree - 1} claves y ${2 * this.degree} hijos. Las tuplas se conservan.`,
       )
     } finally {
       this.isLoading = false
