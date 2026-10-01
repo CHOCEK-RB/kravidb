@@ -86,7 +86,6 @@ class BTreeNode {
 
   static auto validate_degree(int degree) -> int {
     if (degree < 2) {
-      // NOLINTNEXTLINE(bugprone-std-exception-baseclass)
       throw std::invalid_argument{"BTreeNode: el grado minimo t debe ser >= 2"};
     }
     return degree;
