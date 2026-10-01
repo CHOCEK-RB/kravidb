@@ -129,7 +129,17 @@ on_run(function()
 	os.exec("xmake project -k compile_commands")
 
 	print("[lint] Running clang-tidy checks...")
-	os.execv("clang-tidy", table.join({ "-p", "." }, files))
+	local jobs = os.getenv("KRAVIDB_LINT_JOBS")
+	if not jobs or jobs == "" then
+		jobs = tostring(os.cpuinfo().ncpu or 4)
+	end
+	local quoted = {}
+	for _, file in ipairs(files) do
+		table.insert(quoted, string.format("'%s'", file))
+	end
+	local tidy = string.format("printf '%%s\\n' %s | xargs -P %s -n 1 clang-tidy -p .",
+		table.concat(quoted, " "), jobs)
+	os.execv("sh", { "-c", tidy })
 
 	print("[lint] All checks passed.")
 end)
