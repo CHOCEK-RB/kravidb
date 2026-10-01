@@ -6,6 +6,7 @@
   import TelemetryBar from '$lib/components/workbench/TelemetryBar.svelte'
   import EventTerminal from '$lib/components/workbench/EventTerminal.svelte'
   import BTreeViewport from '$lib/components/btree/BTreeViewport.svelte'
+  import BulkProgress from '$lib/components/btree/BulkProgress.svelte'
   import MassSummary from '$lib/components/btree/MassSummary.svelte'
   import PageSlab from '$lib/components/storage/PageSlab.svelte'
   import HexByteViewer from '$lib/components/storage/HexByteViewer.svelte'
@@ -44,6 +45,12 @@
   }
 
   const archNode = $derived(findNode(engine.tree, engine.highlightedNodeId) ?? engine.tree)
+
+  const nf = new Intl.NumberFormat('es-ES')
+  /** Losas del heap cuando el modo masa desactiva la materialización. */
+  const massPages = $derived(engine.pageIds.length)
+  const massMegabytes = $derived((massPages * 4096) / (1024 * 1024))
+  const bulkRunning = $derived(engine.bulk !== null && !engine.bulk.done)
 
   let rackEl = $state<HTMLDivElement | null>(null)
 
@@ -124,7 +131,7 @@
     totalKeys={engine.totalKeys}
     nodes={engine.treeNodeCount}
     depth={engine.treeDepth}
-    pageCount={engine.massMode ? engine.pageIds.length : engine.pages.length}
+    pageCount={engine.massMode ? massPages : engine.pages.length}
     selectedPageId={engine.selectedPageId}
   />
 
@@ -155,8 +162,9 @@
           <div class="mass-note">
             <span class="mn-title">Modo masa activo</span>
             <span class="mn-body">
-              {engine.pageIds.length} losas en el heap. La materialización de losas está desactivada para
-              mantener el render fluido; reinicia para volver al modo interactivo.
+              {nf.format(massPages)} losas en el heap (~{massMegabytes.toFixed(1)} MB de páginas de 4
+              KB). La materialización de losas está desactivada para mantener el render fluido; reinicia
+              para volver al modo interactivo.
             </span>
           </div>
         {:else}
@@ -187,14 +195,23 @@
       <div class="tree-col">
         <header class="col-head">
           <span class="panel-title"><Network size={13} /> Índice lógico</span>
-          <span class="hint">arrastra para mover · rueda para zoom · clic en una clave</span>
+          {#if bulkRunning}
+            <span class="hint">insertando en bloque · el trazado vuelve al terminar</span>
+          {:else if engine.massMode}
+            <span class="hint">vista resumida · usa SCAN o reinicia para volver al trazado</span>
+          {:else}
+            <span class="hint">arrastra para mover · rueda para zoom · clic en una clave</span>
+          {/if}
         </header>
-        {#if engine.massMode}
+        {#if bulkRunning && engine.bulk}
+          <BulkProgress bulk={engine.bulk} degree={engine.degree} />
+        {:else if engine.massMode}
           <MassSummary
             tree={engine.tree}
             keys={engine.totalKeys}
             nodes={engine.treeNodeCount}
             height={engine.treeDepth}
+            pages={massPages}
             bulk={engine.bulk}
             degree={engine.degree}
             onReset={() => engine.resetEngine()}
