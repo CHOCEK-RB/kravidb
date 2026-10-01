@@ -44,6 +44,18 @@ void configure_cors(httplib::Server& server) {
   });
 }
 
+// Impide que dos instancias compartan el puerto: cpp-httplib activa
+// SO_REUSEPORT por defecto, asi que un segundo proceso se reparte las
+// peticiones con el primero y cada uno escribe su log y su motor por separado.
+void configure_socket_options(httplib::Server& server) {
+  server.set_socket_options([](socket_t sock) -> void {
+    static_cast<void>(httplib::set_socket_opt(sock, SOL_SOCKET, SO_REUSEADDR, 1));
+#ifdef SO_REUSEPORT
+    static_cast<void>(httplib::set_socket_opt(sock, SOL_SOCKET, SO_REUSEPORT, 0));
+#endif
+  });
+}
+
 // Omite los espacios iniciales de `text`.
 auto skip_whitespace(std::string_view text) -> std::size_t {
   std::size_t position = 0;
@@ -224,6 +236,7 @@ namespace kravidb::api {
 auto run_server(int port, int degree) -> int {
   httplib::Server server;
   configure_cors(server);
+  configure_socket_options(server);
 
   // Contador de peticiones atendidas, para confirmar que el cliente conecta.
   std::atomic<std::uint64_t> request_count{0};
@@ -360,6 +373,16 @@ auto run_server(int port, int degree) -> int {
     server.set_mount_point("/", std::string{web_root});
   }
 
+  // Se reserva el puerto antes de anunciarlo: si ya hay otra instancia, cpp-httplib
+  // (con SO_REUSEPORT desactivado) falla aqui y el arranque se aborta con un aviso.
+  if (!server.bind_to_port("0.0.0.0", port)) {
+    log_line(
+        std::format("no se pudo escuchar en el puerto {}: probablemente ya hay otra instancia "
+                    "de kravidb_api corriendo (mata la anterior y reintenta)",
+                    port));
+    return 1;
+  }
+
   log_line(std::format("kravidb api listening on http://0.0.0.0:{}", port));
   if (has_web_root) {
     log_line(std::format("web visualizer mounted from {} (open http://localhost:{} in a browser)",
@@ -368,7 +391,7 @@ auto run_server(int port, int degree) -> int {
     log_line("web/dist not found: serving the api only");
     log_line(std::format("build it with 'VITE_USE_MOCK=false bun run build' in web/ and restart"));
   }
-  return server.listen("0.0.0.0", port) ? 0 : 1;
+  return server.listen_after_bind() ? 0 : 1;
 }
 
 }  // namespace kravidb::api
