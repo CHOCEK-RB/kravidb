@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Search, Plus, RotateCcw, Play, Gauge, Zap, X, Layers } from '@lucide/svelte'
+  import { Search, Plus, RotateCcw, Play, Gauge, Zap, X, Layers, Network } from '@lucide/svelte'
   import { padPayload } from '$lib/utils'
   import type { BulkState } from '$lib/stores/engine.svelte'
 
@@ -12,10 +12,12 @@
     batch?: { current: number; total: number } | null
     bulk?: BulkState | null
     massMode?: boolean
+    degree?: number
     onInsert: (key: number, payload: string) => void | Promise<unknown>
     onSearch: (key: number) => void | Promise<unknown>
     onBatchDemo: () => void | Promise<unknown>
     onBulkLoad: (total: number) => void | Promise<unknown>
+    onSetDegree: (degree: number) => void | Promise<unknown>
     onReset: () => void | Promise<unknown>
     onChangeSpeed: (speed: number) => void
     onDismissSplitAlert: () => void
@@ -30,10 +32,12 @@
     batch = null,
     bulk = null,
     massMode = false,
+    degree = 2,
     onInsert,
     onSearch,
     onBatchDemo,
     onBulkLoad,
+    onSetDegree,
     onReset,
     onChangeSpeed,
     onDismissSplitAlert,
@@ -44,12 +48,15 @@
   let searchKeyVal = $state<number>(15)
   let isBatchRunning = $state<boolean>(false)
   let bulkN = $state<number>(10000)
+  let degreeOverride = $state<number | null>(null)
 
   const speeds = [0.5, 1, 2]
   const bulkSizes = [1000, 5000, 10000, 25000, 50000]
+  const degreeSizes = [2, 3, 4, 5, 8, 16, 32, 64]
 
   const bulkRunning = $derived(bulk !== null && !bulk.done)
   const bulkPct = $derived(bulk ? (bulk.current / bulk.total) * 100 : 0)
+  const degreeN = $derived(degreeOverride ?? degree)
 
   async function handleInsertSubmit(e: SubmitEvent) {
     e.preventDefault()
@@ -77,6 +84,12 @@
   async function triggerBulk() {
     if (bulkRunning || isLoading || massMode) return
     await onBulkLoad(Number(bulkN))
+  }
+
+  async function triggerDegree(target: number) {
+    if (isLoading || massMode) return
+    degreeOverride = target
+    await onSetDegree(target)
   }
 </script>
 
@@ -134,6 +147,29 @@
         >
           <Layers size={13} strokeWidth={2.4} />
           <span>{bulkRunning ? `${Math.round(bulkPct)}%` : 'Cargar'}</span>
+        </button>
+      </div>
+
+      <div class="field degree-field">
+        <label for="degree-n">GRADO t</label>
+        <select
+          id="degree-n"
+          value={degreeN}
+          onchange={(e) => void triggerDegree(Number(e.currentTarget.value))}
+          disabled={isLoading || massMode}
+        >
+          {#each degreeSizes as t (t)}
+            <option value={t}>{t}</option>
+          {/each}
+        </select>
+        <button
+          type="button"
+          class="go lavender"
+          onclick={() => void triggerDegree(degreeN)}
+          disabled={isLoading || massMode}
+        >
+          <Network size={13} strokeWidth={2.4} />
+          <span>Construir</span>
         </button>
       </div>
 
@@ -360,6 +396,16 @@
   .bulk-field label {
     color: var(--gold);
     background: color-mix(in srgb, var(--gold) 10%, transparent);
+  }
+
+  .degree-field label {
+    color: var(--lavender);
+    background: color-mix(in srgb, var(--lavender) 10%, transparent);
+  }
+
+  .go.lavender {
+    background: color-mix(in srgb, var(--lavender) 16%, transparent);
+    color: var(--lavender);
   }
 
   .go {
