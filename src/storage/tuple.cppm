@@ -11,8 +11,8 @@ void write_raw(std::vector<std::byte>& out, T value) {
 }
 
 template <typename T>
-[[nodiscard]] auto read_raw(std::span<const std::byte> buffer, std::size_t& offset)
-    -> std::optional<T> {
+[[nodiscard]] auto read_raw(std::span<const std::byte> buffer,
+                            std::size_t& offset) -> std::optional<T> {
   if (buffer.size() < offset || buffer.size() - offset < sizeof(T)) {
     return std::nullopt;
   }
