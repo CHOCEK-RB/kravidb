@@ -7,7 +7,6 @@ Checks: >
   clang-analyzer-*,
   cppcoreguidelines-*,
   modernize-*,
-  -modernize-use-trailing-return-type,
   performance-*,
   readability-*
 WarningsAsErrors: "bugprone-*,cppcoreguidelines-*,cert-*"
