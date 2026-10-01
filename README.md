@@ -35,10 +35,10 @@ Execute the exact commands run by the CI pipeline:
 
 ```bash
 # 1. Format all source files automatically
-find src tests -name "*.cpp" -o -name "*.cppm" | xargs clang-format -i
+find src tests \( -name "*.cpp" -o -name "*.cppm" \) | xargs clang-format -i
 
 # 2. Verify formatting (CI check)
-find src tests -name "*.cpp" -o -name "*.cppm" | xargs clang-format --dry-run --Werror
+find src tests \( -name "*.cpp" -o -name "*.cppm" \) | xargs clang-format --dry-run --Werror
 
 # 3. Clean build and run with AddressSanitizer/UBSan
 xmake f -c -m debug
@@ -46,6 +46,6 @@ xmake
 xmake run kravidb
 
 # 4. Run clang-tidy static analysis
-find src -name "*.cpp" -o -name "*.cppm" | xargs clang-tidy -p .
+find src tests \( -name "*.cpp" -o -name "*.cppm" \) | xargs clang-tidy -p .
 ```
 
