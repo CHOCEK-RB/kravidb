@@ -11,6 +11,7 @@ else
 end
 
 add_requires("gtest", { system = false, configs = { main = true } })
+add_requires("benchmark", { system = false })
 
 target("kravidb")
 set_kind("binary")
@@ -21,6 +22,7 @@ add_defines("_LIBCPP_DISABLE_DEPRECATION_WARNINGS")
 add_cxxflags("-Wno-deprecated-declarations")
 
 add_files("src/**.cpp")
+remove_files("src/benchmark.cpp")
 add_files("src/**.cppm")
 
 add_includedirs("src")
@@ -63,6 +65,31 @@ elseif is_mode("release") then
 end
 
 add_tests("default")
+
+target("benchmarks")
+set_kind("binary")
+set_languages("c++23")
+set_warnings("all", "error")
+
+add_defines("_LIBCPP_DISABLE_DEPRECATION_WARNINGS")
+add_cxxflags("-Wno-deprecated-declarations")
+
+add_files("src/benchmark.cpp")
+add_files("src/**.cppm")
+add_files("src/index/**.cpp", "src/storage/**.cpp")
+
+add_includedirs("src")
+add_packages("benchmark")
+
+-- Los benchmarks no llevan sanitizers: ASan/UBSan distorsionan la latencia.
+if is_mode("debug") then
+	set_symbols("debug")
+	set_optimize("none")
+	add_cxflags("-fno-omit-frame-pointer")
+elseif is_mode("release") then
+	set_symbols("hidden")
+	set_optimize("fastest")
+end
 
 task("lint")
 set_category("plugin")
