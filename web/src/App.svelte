@@ -196,6 +196,7 @@
             nodes={engine.treeNodeCount}
             height={engine.treeDepth}
             bulk={engine.bulk}
+            degree={engine.degree}
             onReset={() => engine.resetEngine()}
           />
         {:else}
@@ -210,6 +211,7 @@
             isSearching={engine.isSearching}
             searchPath={engine.searchMetrics?.path ?? []}
             activeStepIndex={engine.activeStepIndex}
+            degree={engine.degree}
             onSelectKey={handleSelectKey}
             onSelectNode={handleSelectNode}
           />
@@ -233,7 +235,7 @@
     </section>
 
     <section class="anatomy">
-      <NodeAnatomy node={archNode} isRoot={archNode === engine.tree} />
+      <NodeAnatomy node={archNode} isRoot={archNode === engine.tree} degree={engine.degree} />
       <TupleAnatomy
         tuple={selectedTuple}
         pageId={engine.selectedPageId}
