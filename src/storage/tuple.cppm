@@ -11,7 +11,8 @@ void write_raw(std::vector<std::byte>& out, T value) {
 }
 
 template <typename T>
-[[nodiscard]] std::optional<T> read_raw(std::span<const std::byte> buffer, std::size_t& offset) {
+[[nodiscard]] auto read_raw(std::span<const std::byte> buffer, std::size_t& offset)
+    -> std::optional<T> {
   if (buffer.size() < offset || buffer.size() - offset < sizeof(T)) {
     return std::nullopt;
   }
@@ -29,18 +30,15 @@ enum class FieldType : std::uint8_t { Int = 0, Varchar = 1 };
 
 using Field = std::variant<std::int64_t, std::string>;
 
-// Formato binario: [u32 n_campos] y luego, por cada campo:
-//   INT     -> [u8 tipo=0][i64 valor]
-//   VARCHAR -> [u8 tipo=1][u32 longitud][bytes del texto]
 class Tuple {
   public:
   Tuple() = default;
   explicit Tuple(std::vector<Field> fields) : fields_{std::move(fields)} {}
 
-  [[nodiscard]] std::size_t field_count() const noexcept { return fields_.size(); }
-  [[nodiscard]] const std::vector<Field>& fields() const noexcept { return fields_; }
+  [[nodiscard]] auto field_count() const noexcept -> std::size_t { return fields_.size(); }
+  [[nodiscard]] auto fields() const noexcept -> const std::vector<Field>& { return fields_; }
 
-  [[nodiscard]] std::size_t serialized_size() const noexcept {
+  [[nodiscard]] auto serialized_size() const noexcept -> std::size_t {
     std::size_t total = sizeof(std::uint32_t);
     for (const auto& field : fields_) {
       total += sizeof(std::uint8_t);
@@ -53,7 +51,7 @@ class Tuple {
     return total;
   }
 
-  [[nodiscard]] std::vector<std::byte> serialize() const {
+  [[nodiscard]] auto serialize() const -> std::vector<std::byte> {
     std::vector<std::byte> out;
     out.reserve(serialized_size());
     detail::write_raw(out, static_cast<std::uint32_t>(fields_.size()));
@@ -72,7 +70,7 @@ class Tuple {
     return out;
   }
 
-  [[nodiscard]] static std::optional<Tuple> deserialize(std::span<const std::byte> buffer) {
+  [[nodiscard]] static auto deserialize(std::span<const std::byte> buffer) -> std::optional<Tuple> {
     std::size_t offset = 0;
     const auto count = detail::read_raw<std::uint32_t>(buffer, offset);
     if (!count) {
@@ -110,7 +108,7 @@ class Tuple {
     return Tuple{std::move(fields)};
   }
 
-  [[nodiscard]] bool operator==(const Tuple&) const = default;
+  [[nodiscard]] auto operator==(const Tuple&) const -> bool = default;
 
   private:
   std::vector<Field> fields_;
