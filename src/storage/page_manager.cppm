@@ -33,7 +33,7 @@ class Page {
     if (slot_id >= slots_.size()) {
       return std::nullopt;
     }
-    return std::span<const std::byte>{slots_[slot_id]};
+    return std::span<const std::byte>{slots_.at(slot_id)};
   }
 
   [[nodiscard]] std::size_t slot_count() const noexcept { return slots_.size(); }
@@ -73,7 +73,7 @@ class PageManager {
       return std::nullopt;
     }
     ++stats_.page_reads;
-    return pages_[location.page_id].slot(location.slot_id);
+    return pages_.at(location.page_id).slot(location.slot_id);
   }
 
   [[nodiscard]] std::size_t page_count() const noexcept { return pages_.size(); }

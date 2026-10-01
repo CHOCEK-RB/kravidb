@@ -17,7 +17,7 @@ class Table {
     }
 
     const auto* key_ptr = std::get_if<std::int64_t>(&tuple.fields().front());
-    if (!key_ptr) {
+    if (key_ptr == nullptr) {
       throw std::invalid_argument("Table: el primer campo (PK) debe ser de tipo Int");
     }
 
@@ -49,7 +49,7 @@ class Table {
 
     for (PageID page_id = 0; page_id < page_manager_.page_count(); ++page_id) {
       const Page& page = page_manager_.page(page_id);
-      
+
       for (SlotID slot_id = 0; slot_id < page.slot_count(); ++slot_id) {
         const std::optional<std::span<const std::byte>> record = page.slot(slot_id);
         if (record) {

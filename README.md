@@ -19,8 +19,6 @@ xmake run kravidb
 
 ## Code Quality & Pre-Commit Checks
 
-All pull requests are evaluated by GitHub Actions (`.github/workflows/ci.yml`). Commits must pass formatting and compilation gates before merging.
-
 ### Automatic Check (Git Hook)
 
 Enable the local hook once to reject offending commits automatically:
@@ -31,7 +29,19 @@ git config core.hooksPath .githooks
 
 ### Manual Checks
 
-Execute the exact commands run by the CI pipeline:
+Single command that runs the same gates as the hook and CI (format + build + clang-tidy):
+
+```bash
+xmake lint
+```
+
+To analyze only specific files:
+
+```bash
+KRAVIDB_LINT_FILES="src/index/btree.cppm" xmake lint
+```
+
+Equivalent raw commands:
 
 ```bash
 # 1. Format all source files automatically
