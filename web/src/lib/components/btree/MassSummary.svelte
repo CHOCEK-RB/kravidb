@@ -8,19 +8,59 @@
     keys: number
     nodes: number
     height: number
+    pages?: number
     bulk: BulkState | null
     degree?: number
     onReset: () => void | Promise<unknown>
   }
 
-  let { tree, keys, nodes, height, bulk, degree = 2, onReset }: Props = $props()
+  let { tree, keys, nodes, height, pages = 0, bulk, degree = 2, onReset }: Props = $props()
 
   const nf = new Intl.NumberFormat('es-ES')
 
-  const level1 = $derived(tree?.children.slice(0, 8) ?? [])
+  const level1 = $derived(tree?.children.slice(0, 10) ?? [])
   const hidden = $derived(Math.max(0, (tree?.children.length ?? 0) - level1.length))
 
   const keysOf = (node: BTreeNode) => node.keys.map((k) => k.key).join(' · ') || '—'
+
+  const MAX_KEYS = $derived(2 * degree - 1)
+
+  // Una sola pasada por las hojas: ocupación media + histograma de reparto.
+  const leafStats = $derived.by(() => {
+    if (!tree || MAX_KEYS <= 0) return null
+    const buckets = [0, 0, 0, 0, 0]
+    const fill: number[] = []
+    const walk = (node: BTreeNode) => {
+      if (node.children.length === 0) {
+        fill.push(node.keys.length)
+        const ratio = Math.min(1, node.keys.length / MAX_KEYS)
+        const index = Math.min(buckets.length - 1, Math.floor(ratio * buckets.length))
+        buckets[index] = (buckets[index] ?? 0) + 1
+        return
+      }
+      for (const child of node.children) walk(child)
+    }
+    walk(tree)
+    if (fill.length === 0) return null
+    let min = fill[0] ?? 0
+    let max = 0
+    let total = 0
+    for (const count of fill) {
+      min = Math.min(min, count)
+      max = Math.max(max, count)
+      total += count
+    }
+    const avg = total / fill.length
+    return {
+      leaves: fill.length,
+      min,
+      max,
+      avg,
+      occupancy: (avg / MAX_KEYS) * 100,
+      buckets,
+      peak: buckets.reduce((best, value) => Math.max(best, value), 1),
+    }
+  })
 </script>
 
 <div class="panel mass">
@@ -39,8 +79,24 @@
 
   <div class="stats">
     <div class="stat"><span class="k">Tuplas</span><span class="v">{nf.format(keys)}</span></div>
+    <div class="stat"><span class="k">Páginas</span><span class="v">{nf.format(pages)}</span></div>
     <div class="stat"><span class="k">Nodos</span><span class="v">{nf.format(nodes)}</span></div>
+    <div class="stat">
+      <span class="k">Hojas</span><span class="v">{nf.format(leafStats?.leaves ?? 0)}</span>
+    </div>
     <div class="stat"><span class="k">Altura</span><span class="v">{height}</span></div>
+    <div class="stat">
+      <span class="k">Ocupación media</span>
+      <span class="v">{Math.round(leafStats?.occupancy ?? 0)}%</span>
+    </div>
+    <div class="stat">
+      <span class="k">Claves/hoja · mín/med/máx</span>
+      <span class="v"
+        >{leafStats
+          ? `${leafStats.min} · ${leafStats.avg.toFixed(1)} · ${leafStats.max}`
+          : '—'}</span
+      >
+    </div>
     <div class="stat">
       <span class="k">Divisiones</span><span class="v">{nf.format(bulk?.splits ?? 0)}</span>
     </div>
@@ -50,6 +106,28 @@
       >
     </div>
     <div class="stat"><span class="k">Grado</span><span class="v">t = {degree}</span></div>
+  </div>
+
+  <div class="hist">
+    <div class="hist-head">
+      <span class="eyebrow">Reparto de ocupación en las hojas</span>
+      <span class="hist-max">capacidad {MAX_KEYS} claves</span>
+    </div>
+    <div class="bars">
+      {#each leafStats?.buckets ?? [] as bucket, index (index)}
+        <div class="bar">
+          <span class="bar-track">
+            <span
+              class="bar-fill"
+              class:empty={bucket === 0}
+              style="height: {(bucket / (leafStats?.peak ?? 1)) * 100}%"
+            ></span>
+          </span>
+          <span class="bar-count">{nf.format(bucket)}</span>
+          <span class="bar-label">{index * 20}–{(index + 1) * 20}%</span>
+        </div>
+      {/each}
+    </div>
   </div>
 
   <div class="schematic">
@@ -171,6 +249,68 @@
     font-weight: 700;
     color: var(--ink);
     font-variant-numeric: tabular-nums;
+  }
+
+  .hist {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 18px 20px;
+    border-bottom: 1px solid var(--line);
+  }
+  .hist-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .hist-max {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ink-mute);
+  }
+  .bars {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 10px;
+    align-items: end;
+  }
+  .bar {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+  .bar-track {
+    display: flex;
+    align-items: flex-end;
+    width: 100%;
+    height: 92px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: #100d1e;
+    overflow: hidden;
+  }
+  .bar-fill {
+    width: 100%;
+    min-height: 3px;
+    border-radius: 6px 6px 0 0;
+    background: linear-gradient(180deg, var(--gold), color-mix(in srgb, var(--gold) 35%, #000));
+    transition: height 420ms var(--ease-out);
+  }
+  .bar-fill.empty {
+    min-height: 0;
+  }
+  .bar-count {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+  }
+  .bar-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--ink-mute);
   }
 
   .schematic {
