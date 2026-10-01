@@ -18,36 +18,36 @@ class BTreeNode {
   }
 
   BTreeNode(const BTreeNode&) = delete;
-  BTreeNode& operator=(const BTreeNode&) = delete;
+  auto operator=(const BTreeNode&) -> BTreeNode& = delete;
   BTreeNode(BTreeNode&&) = delete;
-  BTreeNode& operator=(BTreeNode&&) = delete;
+  auto operator=(BTreeNode&&) -> BTreeNode& = delete;
   ~BTreeNode() = default;
 
-  [[nodiscard]] int min_degree() const noexcept { return degree_; }
+  [[nodiscard]] auto min_degree() const noexcept -> int { return degree_; }
 
-  [[nodiscard]] bool is_leaf() const noexcept { return is_leaf_; }
+  [[nodiscard]] auto is_leaf() const noexcept -> bool { return is_leaf_; }
 
-  [[nodiscard]] std::size_t max_keys() const noexcept {
+  [[nodiscard]] auto max_keys() const noexcept -> std::size_t {
     return (2 * static_cast<std::size_t>(degree_)) - 1;
   }
 
-  [[nodiscard]] std::size_t min_keys() const noexcept {
+  [[nodiscard]] auto min_keys() const noexcept -> std::size_t {
     return static_cast<std::size_t>(degree_) - 1;
   }
 
-  [[nodiscard]] std::size_t max_children() const noexcept {
+  [[nodiscard]] auto max_children() const noexcept -> std::size_t {
     return 2 * static_cast<std::size_t>(degree_);
   }
 
-  [[nodiscard]] std::size_t key_count() const noexcept { return keys_.size(); }
+  [[nodiscard]] auto key_count() const noexcept -> std::size_t { return keys_.size(); }
 
-  [[nodiscard]] std::size_t child_count() const noexcept { return children_.size(); }
+  [[nodiscard]] auto child_count() const noexcept -> std::size_t { return children_.size(); }
 
-  [[nodiscard]] bool is_full() const noexcept { return keys_.size() == max_keys(); }
+  [[nodiscard]] auto is_full() const noexcept -> bool { return keys_.size() == max_keys(); }
 
-  [[nodiscard]] bool is_empty() const noexcept { return keys_.empty(); }
+  [[nodiscard]] auto is_empty() const noexcept -> bool { return keys_.empty(); }
 
-  [[nodiscard]] bool has_valid_shape() const noexcept {
+  [[nodiscard]] auto has_valid_shape() const noexcept -> bool {
     if (keys_.size() != row_ids_.size() || keys_.size() > max_keys()) {
       return false;
     }
@@ -57,22 +57,25 @@ class BTreeNode {
     return children_.size() == keys_.size() + 1;
   }
 
-  [[nodiscard]] std::size_t lower_bound_index(Key key, std::size_t& comparisons) const {
-    const auto position = std::ranges::lower_bound(keys_, key, [&comparisons](Key lhs, Key rhs) {
-      ++comparisons;
-      return lhs < rhs;
-    });
+  [[nodiscard]] auto lower_bound_index(Key key, std::size_t& comparisons) const -> std::size_t {
+    const auto position =
+        std::ranges::lower_bound(keys_, key, [&comparisons](Key lhs, Key rhs) -> bool {
+          ++comparisons;
+          return lhs < rhs;
+        });
     return static_cast<std::size_t>(std::distance(keys_.begin(), position));
   }
 
-  [[nodiscard]] std::vector<Key>& keys() noexcept { return keys_; }
-  [[nodiscard]] const std::vector<Key>& keys() const noexcept { return keys_; }
+  [[nodiscard]] auto keys() noexcept -> std::vector<Key>& { return keys_; }
+  [[nodiscard]] auto keys() const noexcept -> const std::vector<Key>& { return keys_; }
 
-  [[nodiscard]] std::vector<RowID>& row_ids() noexcept { return row_ids_; }
-  [[nodiscard]] const std::vector<RowID>& row_ids() const noexcept { return row_ids_; }
+  [[nodiscard]] auto row_ids() noexcept -> std::vector<RowID>& { return row_ids_; }
+  [[nodiscard]] auto row_ids() const noexcept -> const std::vector<RowID>& { return row_ids_; }
 
-  [[nodiscard]] std::vector<BTreeNode*>& children() noexcept { return children_; }
-  [[nodiscard]] const std::vector<BTreeNode*>& children() const noexcept { return children_; }
+  [[nodiscard]] auto children() noexcept -> std::vector<BTreeNode*>& { return children_; }
+  [[nodiscard]] auto children() const noexcept -> const std::vector<BTreeNode*>& {
+    return children_;
+  }
 
   private:
   int degree_;
@@ -81,7 +84,7 @@ class BTreeNode {
   std::vector<RowID> row_ids_;
   std::vector<BTreeNode*> children_;
 
-  static int validate_degree(int degree) {
+  static auto validate_degree(int degree) -> int {
     if (degree < 2) {
       // NOLINTNEXTLINE(bugprone-std-exception-baseclass)
       throw std::invalid_argument{"BTreeNode: el grado minimo t debe ser >= 2"};

@@ -1,7 +1,7 @@
 import std;
-import storage.engine;
+import kravidb;
 
-int main() {
+auto main() -> int {
   std::print("Booting: ");
   init_storage();
   return 0;
