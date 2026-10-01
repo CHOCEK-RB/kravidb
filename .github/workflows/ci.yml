@@ -15,13 +15,21 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Clang 18, Tools & libc++
+      - name: Install Clang 22, Tools & libc++
         run: |
-          sudo apt-get update
-          sudo apt-get install -y clang-18 clang-tools-18 libc++-18-dev libc++abi-18-dev clang-format clang-tidy
-          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-18 100
-          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-18 100
-          sudo ln -sf /usr/lib/llvm-18/bin/clang-scan-deps /usr/bin/clang-scan-deps
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 22
+          sudo apt-get install -y clang-format-22 clang-tidy-22 clang-tools-22 libc++-22-dev libc++abi-22-dev
+          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-22 100
+          sudo update-alternatives --set clang /usr/bin/clang-22
+          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-22 100
+          sudo update-alternatives --set clang++ /usr/bin/clang++-22
+          sudo update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-22 100
+          sudo update-alternatives --set clang-format /usr/bin/clang-format-22
+          sudo update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-22 100
+          sudo update-alternatives --set clang-tidy /usr/bin/clang-tidy-22
+          sudo ln -sf /usr/lib/llvm-22/bin/clang-scan-deps /usr/bin/clang-scan-deps
 
       - name: Setup xmake
         uses: xmake-io/github-action-setup-xmake@v1
@@ -30,7 +38,7 @@ jobs:
 
       - name: Configure and build (Debug mode with ASan)
         run: |
-          xmake f -c -m debug --toolchain=clang --sdk=/usr/lib/llvm-18 --runtimes=c++_shared
+          xmake f -c -m debug --toolchain=clang --sdk=/usr/lib/llvm-22 --runtimes=c++_shared
           xmake -v
 
       - name: Lint (format + clang-tidy)
@@ -42,5 +50,5 @@ jobs:
 
       - name: Configure and build (Release mode)
         run: |
-          xmake f -c -m release --toolchain=clang --sdk=/usr/lib/llvm-18 --runtimes=c++_shared
+          xmake f -c -m release --toolchain=clang --sdk=/usr/lib/llvm-22 --runtimes=c++_shared
           xmake -v
