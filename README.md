@@ -6,6 +6,7 @@
 - [xmake](https://xmake.io) 2.8+
 - `clang-format` 17+
 - `clang-tidy` 17+
+- [bun](https://bun.sh) 1.0+ (web visualizer only)
 
 ## Quick Start
 
@@ -16,6 +17,50 @@ xmake
 # Run the database binary
 xmake run kravidb
 ```
+
+## HTTP API
+
+`kravidb_api` exposes the storage engine over HTTP with
+[cpp-httplib](https://github.com/yhirose/cpp-httplib), so the web visualizer can
+drive a real engine instead of its bundled mock.
+
+```bash
+# Build and run the API (use release: sanitizers distort the latency metrics)
+xmake f -m release
+xmake build kravidb_api
+xmake run kravidb_api          # listens on http://0.0.0.0:8080
+xmake run kravidb_api 9000     # optional custom port
+```
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/api/v1/health` | liveness probe |
+| `GET` | `/api/v1/btree` | full tree, node by node |
+| `POST` | `/api/v1/btree/insert` | body `{"key": 42, "payload": "..."}` |
+| `GET` | `/api/v1/btree/search?key=42` | index-scan trace and metrics |
+| `GET` | `/api/v1/page/:id` | slotted page dump (`id` is 1-based) |
+| `POST` | `/api/v1/reset` | rebuild the engine and re-seed it |
+
+The JSON payloads match the contract in `web/src/lib/api/types.ts`.
+`full_scan.latency_ns` follows the frontend convention and is expressed in
+microseconds. When `web/dist` exists the server also mounts it as static
+content, so the UI and the API share a single origin (no CORS setup, no mixed
+content).
+
+## Web visualizer
+
+The Svelte frontend lives in `web/`. It talks to the HTTP API when built with
+`VITE_USE_MOCK=false`, and to an in-browser mock otherwise. Requires
+[bun](https://bun.sh).
+
+```bash
+cd web
+bun install
+bun run dev                        # dev server against the mock
+VITE_USE_MOCK=false bun run build  # production build wired to the API
+```
+
+The resulting `web/dist` is served by `kravidb_api` at `/`.
 
 ## Code Quality & Pre-Commit Checks
 
