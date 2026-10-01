@@ -17,9 +17,6 @@ inline constexpr int http_bad_request = 400;
 inline constexpr int http_not_found = 404;
 inline constexpr int http_internal_error = 500;
 
-// Grado minimo del arbol, elegido para que la division sea visible en el frontend.
-inline constexpr int engine_degree = 2;
-
 // Longitud del campo `bio` de los registros semilla.
 inline constexpr std::size_t seed_bio_length = 255;
 
@@ -31,7 +28,7 @@ constexpr std::string_view web_root = "web/dist";
 // buffer para que las trazas aparezcan aunque la salida este redirigida.
 void log_line(std::string_view message) {
   std::osyncstream stream{std::cout};
-  stream << "[api] " << message << std::endl;
+  stream << "[api] " << message << '\n' << std::flush;
 }
 
 // Aplica a todas las respuestas las cabeceras de CORS.
@@ -174,10 +171,16 @@ void seed_row(kravidb::storage::StorageEngine& engine, std::int64_t key, std::st
   engine.btree().insert_with_stats(key, row_id);
 }
 
-// Crea el motor y lo siembra con las mismas filas que el mock.
-auto make_engine() -> std::unique_ptr<kravidb::storage::StorageEngine> {
+// Serializa el grado y el tamano de pagina del motor activo.
+auto config_to_json(int degree) -> std::string {
+  return std::format(R"({{"degree":{},"page_size":{}}})", degree,
+                     kravidb::storage::default_page_size);
+}
+
+// Crea el motor con el grado indicado y lo siembra con las mismas filas que el mock.
+auto make_engine(int degree) -> std::unique_ptr<kravidb::storage::StorageEngine> {
   auto engine = std::make_unique<kravidb::storage::StorageEngine>(
-      kravidb::storage::default_page_size, engine_degree);
+      kravidb::storage::default_page_size, degree);
 
   struct SeedRow {
     std::int64_t key;
@@ -195,6 +198,18 @@ auto make_engine() -> std::unique_ptr<kravidb::storage::StorageEngine> {
   return engine;
 }
 
+// Reconstruye el motor con otro grado, preservando las tuplas existentes.
+// Los RowID cambian (las paginas son append-only) pero el mapeo queda consistente.
+void rebuild_engine(std::unique_ptr<kravidb::storage::StorageEngine>& engine, int degree) {
+  const std::vector<kravidb::storage::Tuple> rows = engine->table().scan_all();
+  auto fresh = std::make_unique<kravidb::storage::StorageEngine>(
+      kravidb::storage::default_page_size, degree);
+  for (const auto& row : rows) {
+    fresh->table().insert(row);
+  }
+  engine = std::move(fresh);
+}
+
 // Responde con un error JSON minimo.
 void respond_error(httplib::Response& response, int status, std::string_view message) {
   response.status = status;
@@ -205,7 +220,8 @@ void respond_error(httplib::Response& response, int status, std::string_view mes
 
 namespace kravidb::api {
 
-auto run_server(int port) -> int {
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+auto run_server(int port, int degree) -> int {
   httplib::Server server;
   configure_cors(server);
 
@@ -219,12 +235,42 @@ auto run_server(int port) -> int {
                              request.target, response.status, response.body.size()));
       });
 
-  auto engine = make_engine();
+  int current_degree = degree;
+  auto engine = make_engine(current_degree);
   std::mutex mutex;
 
   server.Get("/api/v1/health", [](const httplib::Request&, httplib::Response& response) -> void {
     response.set_content(R"({"status":"ok"})", "application/json");
   });
+
+  server.Get(
+      "/api/v1/config",
+      [&current_degree, &mutex](const httplib::Request&, httplib::Response& response) -> void {
+        const std::scoped_lock lock{mutex};
+        response.set_content(config_to_json(current_degree), "application/json");
+      });
+
+  server.Post("/api/v1/config",
+              [&engine, &current_degree, &mutex](const httplib::Request& request,
+                                                 httplib::Response& response) -> void {
+                const auto requested = body_int(request.body, "degree");
+                if (!requested.has_value() || *requested < minimum_engine_degree ||
+                    *requested > maximum_engine_degree) {
+                  respond_error(response, http_bad_request,
+                                std::format("grado invalido: usa un entero entre {} y {}",
+                                            minimum_engine_degree, maximum_engine_degree));
+                  return;
+                }
+                const std::scoped_lock lock{mutex};
+                try {
+                  rebuild_engine(engine, static_cast<int>(*requested));
+                  current_degree = static_cast<int>(*requested);
+                  log_line(std::format("arbol reconstruido con grado {}", current_degree));
+                  response.set_content(config_to_json(current_degree), "application/json");
+                } catch (const std::exception& error) {
+                  respond_error(response, http_internal_error, error.what());
+                }
+              });
 
   server.Get("/api/v1/btree",
              [&engine, &mutex](const httplib::Request&, httplib::Response& response) -> void {
@@ -302,9 +348,10 @@ auto run_server(int port) -> int {
       });
 
   server.Post("/api/v1/reset",
-              [&engine, &mutex](const httplib::Request&, httplib::Response& response) -> void {
+              [&engine, &current_degree, &mutex](const httplib::Request&,
+                                                 httplib::Response& response) -> void {
                 const std::scoped_lock lock{mutex};
-                engine = make_engine();
+                engine = make_engine(current_degree);
                 response.set_content(R"({"status":"ok"})", "application/json");
               });
 
