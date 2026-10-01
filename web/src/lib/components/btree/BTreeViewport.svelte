@@ -46,6 +46,7 @@
   const CELL_W = 56
   const CELL_GAP = 6
   const X_GAP = 220
+  const X_GAP_PADDING = 64
   const Y_GAP = 150
 
   type Placed = {
@@ -76,7 +77,13 @@
     const root = hierarchy<BTreeNode>(treeData, (d) =>
       d.children && d.children.length ? d.children : undefined,
     )
-    const laid = tree<BTreeNode>().nodeSize([X_GAP, Y_GAP])(root)
+    // La separación horizontal se adapta al nodo más ancho: con grados altos
+    // (más claves por nodo) la separación fija solapaba los nodos.
+    const widest = root
+      .descendants()
+      .reduce((max, current) => Math.max(max, widthOf(current.data)), 0)
+    const spacing = Math.max(X_GAP, widest + X_GAP_PADDING)
+    const laid = tree<BTreeNode>().nodeSize([spacing, Y_GAP])(root)
     const pts = laid.descendants() as HierarchyPointNode<BTreeNode>[]
     const nodes: Placed[] = pts.map((p) => ({
       id: p.data.id,
