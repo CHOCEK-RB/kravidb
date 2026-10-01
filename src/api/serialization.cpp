@@ -166,16 +166,27 @@ auto search_to_json(const storage::RecordStore& records, const index::BTree& tre
   using clock = std::chrono::steady_clock;
   using nanoseconds = std::chrono::nanoseconds;
 
-  const auto index_start = clock::now();
-  const auto trace = tree.search_trace(key);
-  const auto index_end = clock::now();
-  const auto index_ns = std::chrono::duration_cast<nanoseconds>(index_end - index_start).count();
+  // El contrato del frontend (igual que el mock) expresa la latencia del
+  // barrido completo en microsegundos, aunque el campo se llame latency_ns.
+  // El descenso se promedia para no medir el coste de una sola asignacion.
+  constexpr std::int64_t search_repeats = 128;
 
+  const auto index_start = clock::now();
+  for (std::int64_t repeat = 0; repeat < search_repeats; ++repeat) {
+    static_cast<void>(tree.search_trace(key));
+  }
+  const auto index_end = clock::now();
+  const auto index_ns =
+      std::chrono::duration_cast<nanoseconds>(index_end - index_start).count() / search_repeats;
+  const auto trace = tree.search_trace(key);
+
+  static_cast<void>(table.scan_all());  // Calienta cache y asignador antes de medir.
   const auto full_start = clock::now();
   const auto scanned = table.scan_all();
   const auto full_end = clock::now();
-  const auto full_us = std::chrono::duration_cast<nanoseconds>(full_end - full_start).count() /
-                       nanoseconds_per_microsecond;
+  const auto full_ns = std::chrono::duration_cast<nanoseconds>(full_end - full_start).count();
+  const auto full_us =
+      std::max<std::int64_t>(std::int64_t{1}, full_ns / nanoseconds_per_microsecond);
 
   std::string json = "{\"key\":" + std::to_string(key);
   json += ",\"found\":";
