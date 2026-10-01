@@ -109,10 +109,12 @@
     batch={engine.batch}
     bulk={engine.bulk}
     massMode={engine.massMode}
+    degree={engine.degree}
     onInsert={(k, p) => engine.insertKey(k, p)}
     onSearch={(k) => engine.executeSearch(k)}
     onBatchDemo={handleBatchDemo}
     onBulkLoad={(n) => engine.bulkLoad(n)}
+    onSetDegree={(n) => engine.setDegree(n)}
     onReset={() => engine.resetEngine()}
     onChangeSpeed={(s) => (engine.playbackSpeed = s)}
     onDismissSplitAlert={() => (engine.lastSplitOccurred = false)}
