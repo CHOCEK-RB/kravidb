@@ -1,0 +1,52 @@
+# Doxyfile para kravidb.
+#
+# Solo se genera XML: el Markdown final lo produce scripts/doxygen_to_md.py.
+# Se documentan unicamente los modulos (interfaces .cppm); los .cpp de
+# implementacion y los tests quedan fuera.
+
+PROJECT_NAME           = "kravidb"
+PROJECT_NUMBER         = "0.1.0"
+PROJECT_BRIEF          = "Motor de almacenamiento educativo en C++23 basado en modulos"
+
+OUTPUT_DIRECTORY       = docs
+GENERATE_HTML          = NO
+GENERATE_LATEX         = NO
+GENERATE_RTF           = NO
+GENERATE_MAN           = NO
+GENERATE_DOCBOOK       = NO
+GENERATE_AUTOGEN_DEF   = NO
+GENERATE_PERLMOD       = NO
+
+# --- Entrada -------------------------------------------------------------
+INPUT                  = src
+FILE_PATTERNS          = *.cppm
+EXTENSION_MAPPING      = cppm=C++
+RECURSIVE              = YES
+EXCLUDE_SYMBOLS        =
+EXCLUDE_PATTERNS       =
+
+# --- Analisis ------------------------------------------------------------
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = YES
+EXTRACT_STATIC         = YES
+EXTRACT_LOCAL_CLASSES  = YES
+HIDE_UNDOC_MEMBERS     = NO
+HIDE_SCOPE_NAMES       = NO
+MARKDOWN_SUPPORT       = YES
+BUILTIN_STL_SUPPORT    = NO
+FULL_PATH_NAMES        = NO
+SORT_MEMBER_DOCS       = NO
+ALPHABETICAL_INDEX     = NO
+
+# --- Salida XML ----------------------------------------------------------
+GENERATE_XML           = YES
+XML_OUTPUT             = xml
+XML_PROGRAMLISTING     = NO
+
+# --- Graficos y avisos ---------------------------------------------------
+HAVE_DOT               = NO
+QUIET                  = YES
+WARNINGS               = YES
+WARN_IF_UNDOCUMENTED   = NO
+WARN_IF_DOC_ERROR      = YES
+WARN_AS_ERROR          = NO
