@@ -10,6 +10,8 @@ else
 	set_toolchains("clang")
 end
 
+add_requires("gtest", { system = false, configs = { main = true } })
+
 target("kravidb")
 set_kind("binary")
 set_languages("c++23")
@@ -33,6 +35,34 @@ elseif is_mode("release") then
 	set_symbols("hidden")
 	set_optimize("fastest")
 end
+
+target("kravidb_tests")
+set_kind("binary")
+set_languages("c++23")
+set_warnings("all", "error")
+
+add_defines("_LIBCPP_DISABLE_DEPRECATION_WARNINGS")
+add_cxxflags("-Wno-deprecated-declarations")
+
+add_files("tests/**.cpp")
+add_files("src/**.cppm")
+add_files("src/index/**.cpp", "src/storage/**.cpp")
+
+add_includedirs("src")
+add_packages("gtest")
+
+if is_mode("debug") then
+	set_symbols("debug")
+	set_optimize("none")
+	add_cxflags("-fno-omit-frame-pointer")
+	set_policy("build.sanitizer.address", true)
+	set_policy("build.sanitizer.undefined", true)
+elseif is_mode("release") then
+	set_symbols("hidden")
+	set_optimize("fastest")
+end
+
+add_tests("default")
 
 task("lint")
 set_category("plugin")
