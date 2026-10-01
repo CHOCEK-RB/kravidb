@@ -1,5 +1,12 @@
 import { mockClient } from './mock'
-import type { ApiClient, BTreeNode, InsertResult, SearchMetrics, SlottedPageData } from './types'
+import type {
+  ApiClient,
+  BTreeNode,
+  EngineConfig,
+  InsertResult,
+  SearchMetrics,
+  SlottedPageData,
+} from './types'
 
 class HttpApiClient implements ApiClient {
   private baseUrl: string
@@ -32,6 +39,22 @@ class HttpApiClient implements ApiClient {
 
   public async getPage(pageId: number): Promise<SlottedPageData> {
     const res = await fetch(`${this.baseUrl}/api/v1/page/${pageId}`)
+    if (!res.ok) throw new Error(`HTTP Error: ${res.status}`)
+    return res.json()
+  }
+
+  public async getConfig(): Promise<EngineConfig> {
+    const res = await fetch(`${this.baseUrl}/api/v1/config`)
+    if (!res.ok) throw new Error(`HTTP Error: ${res.status}`)
+    return res.json()
+  }
+
+  public async setDegree(degree: number): Promise<EngineConfig> {
+    const res = await fetch(`${this.baseUrl}/api/v1/config`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ degree }),
+    })
     if (!res.ok) throw new Error(`HTTP Error: ${res.status}`)
     return res.json()
   }
