@@ -17,6 +17,8 @@
     newRoot?: boolean
     /** Velocidad de reproducción: escala las animaciones de split/crecimiento. */
     speed?: number
+    /** Grado mínimo del árbol: define el máximo de claves por nodo (2t-1). */
+    degree?: number
     isSearching?: boolean
     searchPath?: SearchPathStep[]
     activeStepIndex?: number
@@ -32,6 +34,7 @@
     promotedKey = null,
     newRoot = false,
     speed = 1,
+    degree = 2,
     isSearching = false,
     searchPath = [],
     activeStepIndex = -1,
@@ -59,8 +62,14 @@
     targetId: string
   }
 
-  const widthOf = (n: BTreeNode) =>
-    n.keys.length ? 26 + n.keys.length * (CELL_W + CELL_GAP) - CELL_GAP : 96
+  /** Claves dibujadas por nodo antes de resumir el resto en el contador. */
+  const MAX_VISIBLE_KEYS = 6
+
+  const widthOf = (n: BTreeNode) => {
+    if (!n.keys.length) return 96
+    const shown = Math.min(n.keys.length, MAX_VISIBLE_KEYS + 1)
+    return 26 + shown * (CELL_W + CELL_GAP) - CELL_GAP
+  }
 
   const layout = $derived.by(() => {
     if (!treeData) return { nodes: [] as Placed[], links: [] as Link[] }
@@ -259,13 +268,13 @@
               {n.data.is_leaf ? 'HOJA' : 'NODO'}
             </text>
             <text class="slots" x={n.w / 2 - 13} y={-NODE_H / 2 + 14} text-anchor="end">
-              {n.data.keys.length}/3
+              {n.data.keys.length}/{2 * degree - 1}
             </text>
 
             {#if n.data.keys.length === 0}
               <text class="void" x="0" y="16" text-anchor="middle">vacío</text>
             {:else}
-              {#each n.data.keys as k, i (k.key)}
+              {#each n.data.keys.slice(0, MAX_VISIBLE_KEYS) as k, i (k.key)}
                 <g
                   class="cell"
                   class:on={k.key === highlightedKey}
@@ -344,7 +353,9 @@
   </svg>
 
   <div class="hud tl">
-    <span class="hud-title"><span class="ico"><Network size={13} /></span> Árbol B · t = 2</span>
+    <span class="hud-title"
+      ><span class="ico"><Network size={13} /></span> Árbol B · t = {degree}</span
+    >
     <span class="hud-row">
       <i>{stats.nodes}</i> nodos<span>·</span><i>{stats.depth}</i> niveles
     </span>

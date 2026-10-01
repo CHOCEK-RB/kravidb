@@ -5,14 +5,15 @@
   interface Props {
     node: BTreeNode | null
     isRoot?: boolean
+    degree?: number
   }
 
-  let { node, isRoot = false }: Props = $props()
+  let { node, isRoot = false, degree = 2 }: Props = $props()
 
-  const T = 2
-  const MAX_KEYS = 2 * T - 1
-  const MAX_CHILDREN = 2 * T
-  const MIN_KEYS = T - 1
+  const T = $derived(degree)
+  const MAX_KEYS = $derived(2 * T - 1)
+  const MAX_CHILDREN = $derived(2 * T)
+  const MIN_KEYS = $derived(T - 1)
 
   const cells = $derived(Array.from({ length: MAX_KEYS }, (_, i) => node?.keys[i] ?? null))
   const pointers = $derived(
