@@ -14,6 +14,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install Clang 22, Tools & libc++
         run: |
@@ -36,12 +38,35 @@ jobs:
         with:
           xmake-version: latest
 
+      - name: Cache xmake packages (gtest, benchmark)
+        uses: actions/cache@v4
+        with:
+          path: ~/.xmake/packages
+          key: xmake-packages-${{ runner.os }}-${{ hashFiles('xmake.lua') }}
+          restore-keys: |
+            xmake-packages-${{ runner.os }}-
+
       - name: Configure and build (Debug mode with ASan)
         run: |
           xmake f -y -c -m debug --toolchain=clang --sdk=/usr/lib/llvm-22 --runtimes=c++_shared --ldflags=-lc++abi
           xmake -v
 
+      - name: Determine lint scope (changed sources in PRs)
+        id: changed
+        run: |
+          files=""
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base="${{ github.event.pull_request.base.sha }}"
+            files=$(git diff --name-only --diff-filter=d "$base...HEAD" \
+              -- ':(glob)src/**/*.cpp' ':(glob)src/**/*.cppm' \
+                 ':(glob)tests/**/*.cpp' ':(glob)tests/**/*.cppm' | paste -sd' ' -)
+          fi
+          echo "files=$files" >> "$GITHUB_OUTPUT"
+          echo "Lint scope: ${files:-(all sources)}"
+
       - name: Lint (format + clang-tidy)
+        env:
+          KRAVIDB_LINT_FILES: ${{ steps.changed.outputs.files }}
         run: xmake lint
 
       - name: Run binary
