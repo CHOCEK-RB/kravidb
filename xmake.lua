@@ -33,3 +33,51 @@ elseif is_mode("release") then
 	set_symbols("hidden")
 	set_optimize("fastest")
 end
+
+task("lint")
+set_category("plugin")
+on_run(function()
+	local function lint_files()
+		local override = os.getenv("KRAVIDB_LINT_FILES")
+		if override and override ~= "" then
+			local list = {}
+			for _, file in ipairs(override:split("%s+")) do
+				if file ~= "" then
+					table.insert(list, file)
+				end
+			end
+			return list
+		end
+		return table.join(
+			os.files("src/**.cpp"),
+			os.files("src/**.cppm"),
+			os.files("tests/**.cpp"),
+			os.files("tests/**.cppm")
+		)
+	end
+
+	local files = lint_files()
+	if #files == 0 then
+		print("[lint] No hay archivos fuente que revisar.")
+		return
+	end
+
+	print("[lint] Checking formatting with clang-format...")
+	os.execv("clang-format", table.join({ "--dry-run", "--Werror" }, files))
+
+	print("[lint] Checking build with xmake...")
+	os.exec("xmake -q")
+
+	print("[lint] Updating compile_commands.json...")
+	os.exec("xmake project -k compile_commands")
+
+	print("[lint] Running clang-tidy checks...")
+	os.execv("clang-tidy", table.join({ "-p", "." }, files))
+
+	print("[lint] All checks passed.")
+end)
+set_menu({
+	usage = "xmake lint",
+	description = "Ejecuta formato, build y clang-tidy (igual que el hook y CI)",
+})
+task_end()

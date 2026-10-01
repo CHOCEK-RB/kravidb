@@ -28,18 +28,13 @@ jobs:
         with:
           xmake-version: latest
 
-      - name: Check code formatting
-        run: |
-          find src tests \( -name "*.cpp" -o -name "*.cppm" \) | xargs -r clang-format --dry-run --Werror
-
       - name: Configure and build (Debug mode with ASan)
         run: |
           xmake f -c -m debug --toolchain=clang --sdk=/usr/lib/llvm-18 --runtimes=c++_shared
           xmake -v
 
-      - name: Run clang-tidy
-        run: |
-          find src tests \( -name "*.cpp" -o -name "*.cppm" \) | xargs -r clang-tidy -p .
+      - name: Lint (format + clang-tidy)
+        run: xmake lint
 
       - name: Run binary
         run: |
