@@ -26,6 +26,14 @@ inline constexpr std::size_t seed_bio_length = 255;
 // Pagina servida desde el directorio de build del frontend, si existe.
 constexpr std::string_view web_root = "web/dist";
 
+// Escribe una traza del servidor en stdout. Usa un stream sincronizado para
+// que las lineas de los hilos del servidor no se entremezclen, y vacia el
+// buffer para que las trazas aparezcan aunque la salida este redirigida.
+void log_line(std::string_view message) {
+  std::osyncstream stream{std::cout};
+  stream << "[api] " << message << std::endl;
+}
+
 // Aplica a todas las respuestas las cabeceras de CORS.
 void configure_cors(httplib::Server& server) {
   server.set_default_headers({
@@ -201,6 +209,16 @@ auto run_server(int port) -> int {
   httplib::Server server;
   configure_cors(server);
 
+  // Contador de peticiones atendidas, para confirmar que el cliente conecta.
+  std::atomic<std::uint64_t> request_count{0};
+  server.set_logger(
+      [&request_count](const httplib::Request& request, const httplib::Response& response) -> void {
+        const auto number = request_count.fetch_add(1, std::memory_order_relaxed) + 1;
+        const std::string_view kind = request.path.starts_with("/api/") ? "api" : "web";
+        log_line(std::format("#{} {} {} {} -> {} ({} B)", number, kind, request.method,
+                             request.target, response.status, response.body.size()));
+      });
+
   auto engine = make_engine();
   std::mutex mutex;
 
@@ -290,11 +308,19 @@ auto run_server(int port) -> int {
                 response.set_content(R"({"status":"ok"})", "application/json");
               });
 
-  if (std::filesystem::is_directory(web_root)) {
+  const bool has_web_root = std::filesystem::is_directory(web_root);
+  if (has_web_root) {
     server.set_mount_point("/", std::string{web_root});
   }
 
-  std::cout << "kravidb api listening on http://0.0.0.0:" << port << '\n' << std::flush;
+  log_line(std::format("kravidb api listening on http://0.0.0.0:{}", port));
+  if (has_web_root) {
+    log_line(std::format("web visualizer mounted from {} (open http://localhost:{} in a browser)",
+                         web_root, port));
+  } else {
+    log_line("web/dist not found: serving the api only");
+    log_line(std::format("build it with 'VITE_USE_MOCK=false bun run build' in web/ and restart"));
+  }
   return server.listen("0.0.0.0", port) ? 0 : 1;
 }
 
