@@ -47,6 +47,17 @@ void collect_keys(const BTreeNode* node, std::vector<Key>& out) {
   return keys;
 }
 
+// Acumula los identificadores de nodo en orden de preorden.
+void collect_node_ids(const BTreeNode* node, std::vector<std::size_t>& out) {
+  if (node == nullptr) {
+    return;
+  }
+  out.push_back(node->id());
+  for (const BTreeNode* child : node->children()) {
+    collect_node_ids(child, out);
+  }
+}
+
 // Verifica de forma recursiva todas las invariantes estructurales del B-Tree.
 void expect_invariants(const BTreeNode* node, int degree, bool is_root) {
   ASSERT_NE(node, nullptr) << "nodo nulo alcanzado durante el recorrido";
@@ -323,6 +334,103 @@ TEST(BTreeMassive, TenThousandKeys) {
 TEST(BTreeMassive, HundredThousandKeys) {
   run_massive_insertion(hundred_thousand, minimum_degree);
   run_massive_insertion(hundred_thousand, wide_degree);
+}
+
+TEST(BTreeNodeIds, AreUniqueAndStable) {
+  BTree tree{minimum_degree};
+  constexpr std::size_t count = 100;
+  for (std::size_t index = 0; index < count; ++index) {
+    tree.insert(static_cast<Key>(index), static_cast<RowID>(index));
+  }
+
+  std::vector<std::size_t> ids;
+  collect_node_ids(tree.root(), ids);
+  ASSERT_FALSE(ids.empty());
+
+  auto deduplicated = ids;
+  std::ranges::sort(deduplicated);
+  const auto duplicates = std::ranges::unique(deduplicated);
+  deduplicated.erase(duplicates.begin(), duplicates.end());
+  EXPECT_EQ(deduplicated.size(), ids.size());
+
+  std::vector<std::size_t> repeated;
+  collect_node_ids(tree.root(), repeated);
+  EXPECT_TRUE(std::ranges::equal(ids, repeated));
+}
+
+TEST(BTreeInsertStats, ReportsSplitWithPromotedKey) {
+  BTree tree{minimum_degree};
+  constexpr std::size_t count = 100;
+  std::size_t splits = 0;
+
+  for (std::size_t index = 0; index < count; ++index) {
+    const auto stats = tree.insert_with_stats(static_cast<Key>(index), static_cast<RowID>(index));
+    if (stats.split_occurred) {
+      ++splits;
+      ASSERT_TRUE(stats.promoted_key.has_value());
+    }
+    EXPECT_FALSE(stats.new_root_created && !stats.split_occurred);
+  }
+
+  EXPECT_GT(splits, 0U);
+}
+
+TEST(BTreeInsertStats, ReportsNewRootWhenGrowingInHeight) {
+  BTree tree{minimum_degree};
+  constexpr std::size_t count = 100;
+  bool saw_new_root = false;
+
+  for (std::size_t index = 0; index < count; ++index) {
+    const auto stats = tree.insert_with_stats(static_cast<Key>(index), static_cast<RowID>(index));
+    if (stats.new_root_created) {
+      saw_new_root = true;
+    }
+  }
+
+  EXPECT_TRUE(saw_new_root);
+  EXPECT_GT(tree.height(), 0U);
+}
+
+TEST(BTreeInsertStats, ReportsNoSplitWhenItFits) {
+  BTree tree{minimum_degree};
+  const auto stats = tree.insert_with_stats(arbitrary_key, arbitrary_row);
+
+  EXPECT_FALSE(stats.split_occurred);
+  EXPECT_FALSE(stats.new_root_created);
+  EXPECT_FALSE(stats.promoted_key.has_value());
+}
+
+TEST(BTreeSearchTrace, RecordsPathOnHit) {
+  BTree tree{minimum_degree};
+  constexpr std::size_t count = 50;
+  for (std::size_t index = 0; index < count; ++index) {
+    tree.insert(static_cast<Key>(index), static_cast<RowID>(index));
+  }
+  ASSERT_GT(tree.height(), 0U);
+
+  const auto trace = tree.search_trace(static_cast<Key>(count - 1));
+
+  ASSERT_TRUE(trace.row_id.has_value());
+  EXPECT_EQ(*trace.row_id, static_cast<RowID>(count - 1));
+  ASSERT_FALSE(trace.path.empty());
+  EXPECT_EQ(trace.path.back().comparison, kravidb::index::SearchPathStep::Comparison::Equal);
+  EXPECT_EQ(trace.stats.node_accesses, trace.path.size());
+  EXPECT_GT(trace.stats.key_comparisons, 0U);
+}
+
+TEST(BTreeSearchTrace, RecordsPathOnMiss) {
+  BTree tree{minimum_degree};
+  constexpr std::size_t count = 50;
+  for (std::size_t index = 0; index < count; ++index) {
+    tree.insert(static_cast<Key>(index * 2), static_cast<RowID>(index));
+  }
+
+  const auto trace = tree.search_trace(Key{1});
+
+  EXPECT_FALSE(trace.row_id.has_value());
+  ASSERT_FALSE(trace.path.empty());
+  EXPECT_EQ(trace.path.back().comparison, kravidb::index::SearchPathStep::Comparison::Greater);
+  EXPECT_EQ(trace.stats.node_accesses, trace.path.size());
 }
 
 }  // namespace

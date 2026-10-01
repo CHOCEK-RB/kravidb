@@ -23,7 +23,9 @@ class BTreeNode {
   /// \brief Crea un nodo vacio.
   /// \param degree Grado minimo `t`; debe ser mayor o igual que 2.
   /// \param leaf Indica si el nodo es hoja.
-  explicit BTreeNode(int degree, bool leaf) : degree_{validate_degree(degree)}, is_leaf_{leaf} {
+  /// \param id Identificador estable del nodo dentro de su arbol.
+  explicit BTreeNode(int degree, bool leaf, std::size_t id = 0)
+      : degree_{validate_degree(degree)}, is_leaf_{leaf}, id_{id} {
     keys_.reserve(max_keys());
     row_ids_.reserve(max_keys());
     if (!is_leaf_) {
@@ -51,6 +53,9 @@ class BTreeNode {
 
   /// \brief Indica si el nodo es hoja.
   [[nodiscard]] auto is_leaf() const noexcept -> bool { return is_leaf_; }
+
+  /// \brief Identificador estable del nodo, asignado por el arbol.
+  [[nodiscard]] auto id() const noexcept -> std::size_t { return id_; }
 
   /// \brief Numero maximo de claves de un nodo (`2t - 1`).
   [[nodiscard]] auto max_keys() const noexcept -> std::size_t {
@@ -131,6 +136,9 @@ class BTreeNode {
 
   /// \brief Indica si el nodo es hoja.
   bool is_leaf_;
+
+  /// \brief Identificador estable del nodo dentro de su arbol.
+  std::size_t id_;
 
   /// \brief Claves, ordenadas de forma ascendente.
   std::vector<Key> keys_;
