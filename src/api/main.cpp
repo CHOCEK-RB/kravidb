@@ -29,8 +29,25 @@ auto parse_port(int argc, char** argv) -> int {
   return kravidb::api::default_api_port;
 }
 
+/// \brief Lee el grado del arbol desde la variable de entorno KRAVIDB_DEGREE.
+/// \return El grado indicado, o el grado por defecto si no es valido.
+auto parse_degree() -> int {
+  const char* raw = std::getenv("KRAVIDB_DEGREE");
+  if (raw == nullptr) {
+    return kravidb::api::default_engine_degree;
+  }
+  const std::string_view text{raw};
+  int parsed = 0;
+  const auto result = std::from_chars(text.begin(), text.end(), parsed);
+  if (result.ec != std::errc{} || parsed < kravidb::api::minimum_engine_degree ||
+      parsed > kravidb::api::maximum_engine_degree) {
+    return kravidb::api::default_engine_degree;
+  }
+  return parsed;
+}
+
 }  // namespace
 
 auto main(int argc, char** argv) -> int {
-  return kravidb::api::run_server(parse_port(argc, argv));
+  return kravidb::api::run_server(parse_port(argc, argv), parse_degree());
 }
