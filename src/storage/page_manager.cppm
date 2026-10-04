@@ -79,7 +79,7 @@ class Page {
         std::span<const std::byte>{data_}.subspan(slot_byte_offset, sizeof(SlotEntry)),
         raw.begin());
     const auto entry = std::bit_cast<SlotEntry>(raw);
-    return std::span<const std::byte>{data_.data() + entry.offset, entry.length};
+    return std::span<const std::byte>{data_}.subspan(entry.offset, entry.length);
   }
 
   /// \brief Numero de ranuras ocupadas en la pagina.
