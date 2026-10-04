@@ -9,17 +9,32 @@ export import storage.row_id;
 
 namespace kravidb::storage::detail {
 
-/// \brief Coste de contabilidad por ranura: la longitud `u32` que la precede.
-inline constexpr std::size_t slot_overhead = sizeof(std::uint32_t);
+/// \brief Entrada de ranura en el directorio: desplazamiento y longitud dentro del buffer.
+struct SlotEntry {
+  /// \brief Desplazamiento desde el inicio de la pagina hacia el inicio del registro.
+  std::uint16_t offset{0};
 
-/// \brief Pagina en memoria: ranuras contiguas con su contabilidad de uso.
+  /// \brief Longitud en bytes del registro almacenado.
+  std::uint16_t length{0};
+};
+
+/// \brief Coste de contabilidad por ranura: tamano de una entrada `SlotEntry` (4 bytes).
+inline constexpr std::size_t slot_overhead = sizeof(SlotEntry);
+
+/// \brief Pagina fisica en memoria con layout slotted-page continuo.
+///
+/// La pagina aloja un unico buffer de bytes continuo (`data_`):
+/// - El directorio de ranuras (`SlotEntry`, 4 bytes cada uno) crece desde el byte 0 hacia adelante.
+/// - Los registros de tuplas se escriben al fondo del buffer y crecen hacia atras.
+/// - El espacio libre es el hueco entre el final del directorio y el inicio del ultimo registro.
 ///
 /// No se exporta; es un detalle de implementacion de `PageManager`.
 class Page {
   public:
-  /// \brief Crea una pagina con la capacidad indicada.
+  /// \brief Crea una pagina con la capacidad indicada y reserva su buffer continuo.
   /// \param capacity Capacidad total de la pagina, en bytes.
-  explicit Page(std::size_t capacity) : capacity_{capacity} {}
+  explicit Page(std::size_t capacity)
+      : capacity_{capacity}, free_space_end_{capacity}, data_(capacity, std::byte{0}) {}
 
   /// \brief Comprueba si un registro de este tamano cabe en la pagina.
   /// \param record_size Tamano del registro, sin la contabilidad de la ranura.
@@ -27,41 +42,70 @@ class Page {
     return used_bytes_ + record_size + slot_overhead <= capacity_;
   }
 
-  /// \brief Anade un registro al final de la pagina.
+  /// \brief Anade un registro al fondo de la pagina y registra su ranura en el directorio.
   /// \param record Bytes del registro.
   /// \return La ranura asignada al registro.
   [[nodiscard]] auto append(std::span<const std::byte> record) -> SlotID {
-    slots_.emplace_back(record.begin(), record.end());
-    used_bytes_ += record.size() + slot_overhead;
-    return static_cast<SlotID>(slots_.size() - 1);
+    const auto record_size = record.size();
+    const auto target_offset = free_space_end_ - record_size;
+    std::ranges::copy(record, data_.begin() + static_cast<std::ptrdiff_t>(target_offset));
+
+    const SlotEntry entry{
+        .offset = static_cast<std::uint16_t>(target_offset),
+        .length = static_cast<std::uint16_t>(record_size),
+    };
+    const auto slot_byte_offset = slot_count_ * slot_overhead;
+    const auto entry_bytes = std::bit_cast<std::array<std::byte, sizeof(SlotEntry)>>(entry);
+    std::ranges::copy(entry_bytes, data_.begin() + static_cast<std::ptrdiff_t>(slot_byte_offset));
+
+    free_space_end_ = target_offset;
+    used_bytes_ += record_size + slot_overhead;
+    const auto assigned_slot = static_cast<SlotID>(slot_count_);
+    ++slot_count_;
+    return assigned_slot;
   }
 
-  /// \brief Devuelve los bytes de una ranura.
+  /// \brief Devuelve los bytes de una ranura leyendo su descriptor en el directorio.
   /// \param slot_id Ranura consultada.
   /// \return Los bytes almacenados, o `std::nullopt` si la ranura no existe.
   [[nodiscard]] auto slot(SlotID slot_id) const noexcept
       -> std::optional<std::span<const std::byte>> {
-    if (slot_id >= slots_.size()) {
+    if (slot_id >= slot_count_) {
       return std::nullopt;
     }
-    return std::span<const std::byte>{slots_.at(slot_id)};
+    const auto slot_byte_offset = static_cast<std::size_t>(slot_id) * slot_overhead;
+    std::array<std::byte, sizeof(SlotEntry)> raw{};
+    std::ranges::copy(
+        std::span<const std::byte>{data_}.subspan(slot_byte_offset, sizeof(SlotEntry)),
+        raw.begin());
+    const auto entry = std::bit_cast<SlotEntry>(raw);
+    return std::span<const std::byte>{data_.data() + entry.offset, entry.length};
   }
 
   /// \brief Numero de ranuras ocupadas en la pagina.
-  [[nodiscard]] auto slot_count() const noexcept -> std::size_t { return slots_.size(); }
+  [[nodiscard]] auto slot_count() const noexcept -> std::size_t { return slot_count_; }
 
-  /// \brief Bytes consumidos por registros y contabilidad.
+  /// \brief Bytes consumidos por registros y contabilidad de ranuras.
   [[nodiscard]] auto used_bytes() const noexcept -> std::size_t { return used_bytes_; }
+
+  /// \brief Acceso de solo lectura al buffer fisico continuo de la pagina.
+  [[nodiscard]] auto raw_bytes() const noexcept -> std::span<const std::byte> { return data_; }
 
   private:
   /// \brief Capacidad total de la pagina, en bytes.
   std::size_t capacity_;
 
-  /// \brief Bytes consumidos hasta el momento.
+  /// \brief Bytes consumidos hasta el momento (ranuras + tuplas).
   std::size_t used_bytes_{0};
 
-  /// \brief Ranuras almacenadas, cada una con su copia de los bytes.
-  std::vector<std::vector<std::byte>> slots_;
+  /// \brief Numero de ranuras actualmente ocupadas.
+  std::size_t slot_count_{0};
+
+  /// \brief Limite inferior de la region de datos (desciende con cada insercion).
+  std::size_t free_space_end_;
+
+  /// \brief Buffer continuo de memoria de la pagina.
+  std::vector<std::byte> data_;
 };
 
 }  // namespace kravidb::storage::detail
