@@ -23,7 +23,6 @@ add_defines("_LIBCPP_DISABLE_DEPRECATION_WARNINGS")
 add_cxxflags("-Wno-deprecated-declarations")
 
 add_files("src/**.cpp")
-remove_files("src/benchmark.cpp")
 remove_files("src/api/**")
 add_files("src/**.cppm")
 
@@ -72,7 +71,7 @@ elseif is_mode("release") then
 	set_optimize("fastest")
 end
 
-add_tests("default")
+add_tests("default", { realtime_output = true })
 
 target("benchmarks")
 set_kind("binary")
@@ -82,7 +81,7 @@ set_warnings("all", "error")
 add_defines("_LIBCPP_DISABLE_DEPRECATION_WARNINGS")
 add_cxxflags("-Wno-deprecated-declarations")
 
-add_files("src/benchmark.cpp")
+add_files("benchmarks/**.cpp")
 add_files("src/**.cppm")
 remove_files("src/api/**")
 add_files("src/index/**.cpp", "src/storage/**.cpp")
@@ -144,7 +143,8 @@ on_run(function()
 			os.files("src/**.cpp"),
 			os.files("src/**.cppm"),
 			os.files("tests/**.cpp"),
-			os.files("tests/**.cppm")
+			os.files("tests/**.cppm"),
+			os.files("benchmarks/**.cpp")
 		)
 	end
 
