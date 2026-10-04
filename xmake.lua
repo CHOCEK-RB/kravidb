@@ -23,6 +23,9 @@ set_rundir("$(projectdir)")
 add_defines("_LIBCPP_DISABLE_DEPRECATION_WARNINGS")
 add_cxxflags("-Wno-deprecated-declarations")
 
+add_defines("_LIBCPP_DISABLE_DEPRECATION_WARNINGS")
+add_cxxflags("-Wno-deprecated-declarations")
+
 add_files("src/**.cpp")
 remove_files("src/api/**")
 add_files("src/**.cppm")

@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 set -e
 
-# Revision incremental: solo los archivos C++ que entran al commit.
-# El CI y `xmake lint` sin variables siguen revisando todo el proyecto.
 staged=$(git diff --cached --name-only --diff-filter=d -- src tests benchmarks \
   | grep -E '\.(cpp|cppm)$' || true)
 

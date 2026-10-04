@@ -10,6 +10,5 @@ Diagnostics:
       - bugprone-*
       - cppcoreguidelines-*
       - cert-*
-    # Mantener las exclusiones de .clang-tidy (el Add de arriba las re-encendia).
     Remove:
       - bugprone-exception-escape

@@ -144,6 +144,33 @@ cd web && VITE_USE_MOCK=false bun run build && cd ..
 # 2. Iniciar el servidor API y visualizador en un único origen
 xmake run kravidb_api 8080
 ```
+kravidb/
+├── src/
+│   ├── main.cpp              # Punto de entrada
+│   └── storage/
+│       └── engine.cppm       # Módulo del motor de almacenamiento
+├── tests/                    # Pruebas (en construcción)
+├── .github/workflows/
+│   └── ci.yml                # Pipeline de integración continua
+├── .githooks/
+│   └── pre-commit            # Validación antes de cada commit
+├── .clang-format             # Reglas de formateo
+├── .clang-tidy               # Reglas de análisis estático
+├── xmake.lua                 # Configuración de construcción
+└── README.md
+```
+
+<br>
+
+## ✅ Calidad de código
+
+Todos los *pull requests* pasan por **GitHub Actions** (`.github/workflows/ci.yml`). Cada commit debe superar las verificaciones de **formato** y **compilación** antes de poder fusionarse.
+
+> [!TIP]
+> Activa el hook local **una sola vez** y cada `git commit` validará formato, compilación y análisis estático de forma automática:
+> ```bash
+> git config core.hooksPath .githooks
+> ```
 
 Abre [http://localhost:8080](http://localhost:8080) en el navegador para interactuar con el motor en tiempo real.
 
