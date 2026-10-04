@@ -257,6 +257,26 @@ TEST(PageManager, TracksWritesAndReads) {
   EXPECT_EQ(store.stats().page_writes, 0U);
 }
 
+TEST(PageManager, ContiguousBufferSlottedLayout) {
+  PageManager store{tiny_page};
+  const auto payload1 = bytes_of("primero");
+  const auto payload2 = bytes_of("segundo");
+
+  const RowID row1 = store.insert(payload1);
+  const RowID row2 = store.insert(payload2);
+
+  const auto read1 = store.read(row1);
+  const auto read2 = store.read(row2);
+  ASSERT_TRUE(read1.has_value());
+  ASSERT_TRUE(read2.has_value());
+
+  // Las tuplas crecen hacia atras desde el final del buffer contiguo:
+  // el primer registro esta en una direccion de memoria superior al segundo.
+  EXPECT_GT(read1->data(), read2->data());
+  EXPECT_TRUE(std::ranges::equal(*read1, payload1));
+  EXPECT_TRUE(std::ranges::equal(*read2, payload2));
+}
+
 // ---------------------------------------------------------------------------
 // Table
 // ---------------------------------------------------------------------------
