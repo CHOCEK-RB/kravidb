@@ -6,6 +6,7 @@ export module storage.table;
 import std;
 export import storage.record_store;
 export import storage.tuple;
+export import storage.schema;
 export import index.index;
 
 export namespace kravidb::storage {
@@ -14,13 +15,18 @@ export namespace kravidb::storage {
 ///
 /// El primer campo de cada tupla debe ser un entero de 64 bits y actua como
 /// clave primaria (PK). La tabla no posee el almacen ni el indice: los recibe por
-/// referencia en la construccion.
+/// referencia en la construccion. Opcionalmente recibe un `Schema` para validar campos.
 class Table final {
   public:
-  /// \brief Construye la tabla sobre un almacen y un indice existentes.
+  /// \brief Construye la tabla sobre un almacen y un indice existentes, con esquema opcional.
   /// \param records Almacen donde se persisten las tuplas (no se posee).
   /// \param index Indice que asocia la PK con el `RowID` (no se posee).
-  Table(RecordStore& records, index::Index& index) : records_{records}, index_{index} {}
+  /// \param schema Esquema relacional opcional para validacion de tuplas.
+  Table(RecordStore& records, index::Index& index, Schema schema = Schema{})
+      : records_{records}, index_{index}, schema_{std::move(schema)} {}
+
+  /// \brief Esquema relacional de la tabla.
+  [[nodiscard]] auto schema() const noexcept -> const Schema& { return schema_; }
 
   /// \brief Inserta una tupla y la indexa por su clave primaria.
   /// \param tuple Tupla a insertar; el primer campo es la PK.
@@ -46,6 +52,9 @@ class Table final {
   /// \brief Indice de claves primarias (referencia no propietaria).
   index::Index& index_;
   // NOLINTEND(cppcoreguidelines-avoid-const-or-ref-data-members)
+
+  /// \brief Esquema relacional de la tabla.
+  Schema schema_;
 };
 
 }  // namespace kravidb::storage

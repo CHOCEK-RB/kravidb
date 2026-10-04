@@ -15,6 +15,9 @@ export import storage.page_manager;
 /// \brief Fachada de tabla que combina registros e indice (`Table`).
 export import storage.table;
 
+/// \brief Definicion de columnas y esquema relacional (`Schema`, `ColumnDef`).
+export import storage.schema;
+
 /// \brief Fachada que ensambla los componentes del motor (`StorageEngine`).
 export import storage.engine;
 

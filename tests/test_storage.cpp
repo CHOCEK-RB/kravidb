@@ -7,14 +7,17 @@ namespace {
 
 using kravidb::index::BTree;
 using kravidb::index::Key;
+using kravidb::storage::ColumnDef;
 using kravidb::storage::decode_row_id;
 using kravidb::storage::default_page_size;
 using kravidb::storage::encode_row_id;
 using kravidb::storage::Field;
+using kravidb::storage::FieldType;
 using kravidb::storage::PageID;
 using kravidb::storage::PageManager;
 using kravidb::storage::RowID;
 using kravidb::storage::RowLocation;
+using kravidb::storage::Schema;
 using kravidb::storage::SlotID;
 using kravidb::storage::StorageEngine;
 using kravidb::storage::Table;
@@ -384,6 +387,68 @@ TEST(StorageEngine, IndexResolvesToStoredRecord) {
   const auto restored = Tuple::deserialize(*stored);
   ASSERT_TRUE(restored.has_value());
   EXPECT_EQ(*restored, expected);
+}
+
+// ---------------------------------------------------------------------------
+// Schema & Table Integration
+// ---------------------------------------------------------------------------
+
+TEST(Schema, RejectsEmptyColumnName) {
+  const std::vector<ColumnDef> cols = {
+      ColumnDef{.name = "", .type = FieldType::Int, .is_primary_key = true},
+  };
+  EXPECT_THROW((void)Schema{cols}, std::invalid_argument);
+}
+
+TEST(Schema, RejectsMultiplePrimaryKeys) {
+  const std::vector<ColumnDef> cols = {
+      ColumnDef{.name = "id", .type = FieldType::Int, .is_primary_key = true},
+      ColumnDef{.name = "alt_id", .type = FieldType::Int, .is_primary_key = true},
+  };
+  EXPECT_THROW((void)Schema{cols}, std::invalid_argument);
+}
+
+TEST(Schema, FindColumnAndValidateTuple) {
+  const Schema schema{std::vector<ColumnDef>{
+      ColumnDef{.name = "id", .type = FieldType::Int, .is_primary_key = true},
+      ColumnDef{.name = "name", .type = FieldType::Varchar, .is_primary_key = false},
+  }};
+
+  EXPECT_EQ(schema.column_count(), 2U);
+  EXPECT_FALSE(schema.empty());
+  EXPECT_EQ(schema.primary_key_index(), std::optional<std::size_t>{0});
+  EXPECT_EQ(schema.find_column("id"), std::optional<std::size_t>{0});
+  EXPECT_EQ(schema.find_column("name"), std::optional<std::size_t>{1});
+  EXPECT_FALSE(schema.find_column("nonexistent").has_value());
+
+  const Tuple valid{std::vector<Field>{std::int64_t{42}, std::string{"Alice"}}};
+  EXPECT_TRUE(schema.validate(valid));
+
+  const Tuple wrong_type{std::vector<Field>{std::string{"42"}, std::string{"Alice"}}};
+  EXPECT_FALSE(schema.validate(wrong_type));
+
+  const Tuple wrong_count{std::vector<Field>{std::int64_t{42}}};
+  EXPECT_FALSE(schema.validate(wrong_count));
+}
+
+TEST(Table, ValidatesTupleAgainstSchemaOnInsert) {
+  PageManager records{};
+  BTree index{};
+  const Schema schema{std::vector<ColumnDef>{
+      ColumnDef{.name = "id", .type = FieldType::Int, .is_primary_key = true},
+      ColumnDef{.name = "tag", .type = FieldType::Varchar, .is_primary_key = false},
+  }};
+  Table table{records, index, schema};
+
+  const Tuple valid{std::vector<Field>{std::int64_t{1}, std::string{"ok"}}};
+  EXPECT_NO_THROW(table.insert(valid));
+
+  const Tuple invalid_type{std::vector<Field>{std::int64_t{2}, std::int64_t{99}}};
+  EXPECT_THROW(table.insert(invalid_type), std::invalid_argument);
+
+  const auto found = table.find_by_index(1);
+  ASSERT_TRUE(found.has_value());
+  EXPECT_EQ(*found, valid);
 }
 
 }  // namespace
