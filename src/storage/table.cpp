@@ -10,7 +10,12 @@ void Table::insert(const Tuple& tuple) {
     throw std::invalid_argument{"Table: la tupla no puede estar vacia"};
   }
 
-  const auto* key_ptr = std::get_if<std::int64_t>(&tuple.fields().front());
+  if (!schema_.empty() && !schema_.validate(tuple)) {
+    throw std::invalid_argument{"Table: la tupla no coincide con el esquema"};
+  }
+
+  const std::size_t pk_index = schema_.primary_key_index().value_or(0);
+  const auto* key_ptr = std::get_if<std::int64_t>(&tuple.fields().at(pk_index));
   if (key_ptr == nullptr) {
     throw std::invalid_argument{"Table: el primer campo (PK) debe ser de tipo Int"};
   }
