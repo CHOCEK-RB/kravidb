@@ -20,8 +20,22 @@ inline constexpr int http_internal_error = 500;
 // Longitud del campo `bio` de los registros semilla.
 inline constexpr std::size_t seed_bio_length = 255;
 
-// Pagina servida desde el directorio de build del frontend, si existe.
-constexpr std::string_view web_root = "web/dist";
+// Candidatos para el directorio de build del frontend segun el directorio de trabajo.
+inline constexpr std::array<std::string_view, 3> web_root_candidates = {
+    "web/dist",
+    "../../../../web/dist",
+    "dist",
+};
+
+// Resuelve la ubicacion real de los archivos estaticos si alguna de las rutas existe.
+auto resolve_web_root() -> std::optional<std::string> {
+  for (const auto candidate : web_root_candidates) {
+    if (std::filesystem::is_directory(candidate)) {
+      return std::string{candidate};
+    }
+  }
+  return std::nullopt;
+}
 
 // Escribe una traza del servidor en stdout. Un mutex evita que las lineas de
 // los hilos del servidor se entremezclen (std::osyncstream no existe en
@@ -235,7 +249,7 @@ void respond_error(httplib::Response& response, int status, std::string_view mes
 
 namespace kravidb::api {
 
-// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters,readability-function-cognitive-complexity)
 auto run_server(int port, int degree) -> int {
   httplib::Server server;
   configure_cors(server);
@@ -371,9 +385,9 @@ auto run_server(int port, int degree) -> int {
                 response.set_content(R"({"status":"ok"})", "application/json");
               });
 
-  const bool has_web_root = std::filesystem::is_directory(web_root);
-  if (has_web_root) {
-    server.set_mount_point("/", std::string{web_root});
+  const auto web_dir = resolve_web_root();
+  if (web_dir.has_value()) {
+    server.set_mount_point("/", *web_dir);
   }
 
   // Se reserva el puerto antes de anunciarlo: si ya hay otra instancia, cpp-httplib
@@ -387,9 +401,9 @@ auto run_server(int port, int degree) -> int {
   }
 
   log_line(std::format("kravidb api listening on http://0.0.0.0:{}", port));
-  if (has_web_root) {
+  if (web_dir.has_value()) {
     log_line(std::format("web visualizer mounted from {} (open http://localhost:{} in a browser)",
-                         web_root, port));
+                         *web_dir, port));
   } else {
     log_line("web/dist not found: serving the api only");
     log_line(std::format("build it with 'VITE_USE_MOCK=false bun run build' in web/ and restart"));
