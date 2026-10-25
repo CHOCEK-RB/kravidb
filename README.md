@@ -251,10 +251,10 @@ Todos los *pull requests* pasan por **GitHub Actions** (`.github/workflows/ci.ym
 
 ```bash
 # 1. Formatear todos los archivos fuente automáticamente
-find src tests -name "*.cpp" -o -name "*.cppm" | xargs clang-format -i
+find src apps tests -name "*.cpp" -o -name "*.cppm" | xargs clang-format -i
 
 # 2. Verificar el formato (comprobación de CI)
-find src tests -name "*.cpp" -o -name "*.cppm" | xargs clang-format --dry-run --Werror
+find src apps tests -name "*.cpp" -o -name "*.cppm" | xargs clang-format --dry-run --Werror
 
 # 3. Compilación limpia con AddressSanitizer / UBSan
 xmake f -c -m debug
@@ -262,7 +262,7 @@ xmake
 xmake run kravidb
 
 # 4. Análisis estático con clang-tidy
-find src -name "*.cpp" -o -name "*.cppm" | xargs clang-tidy -p .
+find src apps -name "*.cpp" -o -name "*.cppm" | xargs clang-tidy -p .
 ```
 
 </details>

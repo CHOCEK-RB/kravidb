@@ -14,128 +14,76 @@ add_requires("gtest", { system = false, configs = { main = true } })
 add_requires("benchmark", { system = false })
 add_requires("cpp-httplib")
 
+function kravidb_common()
+	set_languages("c++23")
+	set_warnings("all", "error")
+	add_defines("_LIBCPP_DISABLE_DEPRECATION_WARNINGS")
+	add_cxxflags("-Wno-deprecated-declarations")
+	add_includedirs("src")
+end
+
+function kravidb_mode(enable_sanitizers)
+	if is_mode("debug") then
+		set_symbols("debug")
+		set_optimize("none")
+		add_cxflags("-fno-omit-frame-pointer")
+		if enable_sanitizers then
+			set_policy("build.sanitizer.address", true)
+			set_policy("build.sanitizer.undefined", true)
+		end
+	elseif is_mode("release") then
+		set_symbols("hidden")
+		set_optimize("fastest")
+	end
+end
+
+target("kravidb_lib")
+set_kind("static")
+kravidb_common()
+kravidb_mode(true)
+
+add_files("src/**.cppm", { public = true })
+add_files("src/**.cpp")
+add_packages("cpp-httplib")
+
 target("kravidb")
 set_kind("binary")
-set_languages("c++23")
-set_warnings("all", "error")
+kravidb_common()
+kravidb_mode(true)
 set_rundir("$(projectdir)")
 
-add_defines("_LIBCPP_DISABLE_DEPRECATION_WARNINGS")
-add_cxxflags("-Wno-deprecated-declarations")
-
-add_files("src/**.cpp")
-remove_files("src/api/**")
-add_files("src/**.cppm")
-
-add_includedirs("src")
-
-if is_mode("debug") then
-	set_symbols("debug")
-	set_optimize("none")
-	add_cxflags("-fno-omit-frame-pointer")
-	set_policy("build.sanitizer.address", true)
-	set_policy("build.sanitizer.undefined", true)
-elseif is_mode("release") then
-	set_symbols("hidden")
-	set_optimize("fastest")
-end
+add_files("apps/cli/main.cpp")
+add_deps("kravidb_lib")
 
 target("kravidb_tests")
 set_kind("binary")
-set_languages("c++23")
-set_warnings("all", "error")
-
-add_defines("_LIBCPP_DISABLE_DEPRECATION_WARNINGS")
-add_cxxflags("-Wno-deprecated-declarations")
+kravidb_common()
+kravidb_mode(true)
 
 add_files("tests/**.cpp")
-add_files(
-    "src/kravidb.cppm",
-    "src/storage/**.cppm",
-    "src/index/**.cppm",
-    "src/api/json.cppm",
-    "src/api/serialization.cppm",
-    "src/api/request.cppm",
-    "src/api/handlers.cppm"
-)
-add_files(
-    "src/index/**.cpp",
-    "src/storage/**.cpp",
-    "src/api/json.cpp",
-    "src/api/serialization.cpp",
-    "src/api/request.cpp",
-    "src/api/handlers.cpp"
-)
-
-add_includedirs("src")
 add_packages("gtest")
-
-if is_mode("debug") then
-	set_symbols("debug")
-	set_optimize("none")
-	add_cxflags("-fno-omit-frame-pointer")
-	set_policy("build.sanitizer.address", true)
-	set_policy("build.sanitizer.undefined", true)
-elseif is_mode("release") then
-	set_symbols("hidden")
-	set_optimize("fastest")
-end
-
+add_deps("kravidb_lib")
 add_tests("default", { realtime_output = true })
 
 target("benchmarks")
 set_kind("binary")
-set_languages("c++23")
-set_warnings("all", "error")
+kravidb_common()
+kravidb_mode(false)
 set_rundir("$(projectdir)")
 
-add_defines("_LIBCPP_DISABLE_DEPRECATION_WARNINGS")
-add_cxxflags("-Wno-deprecated-declarations")
-
 add_files("benchmarks/**.cpp")
-add_files("src/**.cppm")
-remove_files("src/api/**")
-add_files("src/index/**.cpp", "src/storage/**.cpp")
-
-add_includedirs("src")
 add_packages("benchmark")
-
--- Los benchmarks no llevan sanitizers: ASan/UBSan distorsionan la latencia.
-if is_mode("debug") then
-	set_symbols("debug")
-	set_optimize("none")
-	add_cxflags("-fno-omit-frame-pointer")
-elseif is_mode("release") then
-	set_symbols("hidden")
-	set_optimize("fastest")
-end
+add_deps("kravidb_lib")
 
 target("kravidb_api")
 set_kind("binary")
-set_languages("c++23")
-set_warnings("all", "error")
+kravidb_common()
+kravidb_mode(true)
 set_rundir("$(projectdir)")
 
-add_defines("_LIBCPP_DISABLE_DEPRECATION_WARNINGS")
-add_cxxflags("-Wno-deprecated-declarations")
-
-add_files("src/api/**.cpp")
-add_files("src/**.cppm")
-add_files("src/index/**.cpp", "src/storage/**.cpp")
-
-add_includedirs("src")
+add_files("apps/api/main.cpp")
 add_packages("cpp-httplib")
-
-if is_mode("debug") then
-	set_symbols("debug")
-	set_optimize("none")
-	add_cxflags("-fno-omit-frame-pointer")
-	set_policy("build.sanitizer.address", true)
-	set_policy("build.sanitizer.undefined", true)
-elseif is_mode("release") then
-	set_symbols("hidden")
-	set_optimize("fastest")
-end
+add_deps("kravidb_lib")
 
 task("lint")
 set_category("plugin")
@@ -154,6 +102,8 @@ on_run(function()
 		return table.join(
 			os.files("src/**.cpp"),
 			os.files("src/**.cppm"),
+			os.files("apps/**.cpp"),
+			os.files("apps/**.cppm"),
 			os.files("tests/**.cpp"),
 			os.files("tests/**.cppm"),
 			os.files("benchmarks/**.cpp")
