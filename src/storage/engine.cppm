@@ -1,5 +1,5 @@
 /// \file
-/// \brief Fachada `StorageEngine` que ensambla los componentes del motor.
+/// \brief `StorageEngine` facade that assembles the engine components.
 
 export module storage.engine;
 
@@ -12,57 +12,57 @@ export import index.index;
 
 export namespace kravidb::storage {
 
-/// \brief Motor de almacenamiento: posee y conecta almacen, indice y tabla.
+/// \brief Storage engine: owns and wires the record store, index and table.
 ///
-/// Es el punto de entrada de mas alto nivel. Construye un `PageManager`, un
-/// `BTree` y un `Table` que los enlaza, y expone cada componente por referencia.
+/// It is the highest-level entry point. It builds a `PageManager`, a `BTree` and
+/// a `Table` that links them, and exposes each component by reference.
 class StorageEngine final {
   public:
-  /// \brief Construye el motor con el tamano de pagina, el grado y el esquema indicados.
-  /// \param page_size Tamano de pagina del almacen, en bytes.
-  /// \param degree Grado minimo `t` del arbol B del indice.
-  /// \param schema Esquema opcional que valida las tuplas de la tabla.
+  /// \brief Builds the engine with the given page size, degree and schema.
+  /// \param page_size Page size of the store, in bytes.
+  /// \param degree Minimum degree `t` of the index B-tree.
+  /// \param schema Optional schema that validates the table tuples.
   // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
   explicit StorageEngine(std::size_t page_size = default_page_size,
                          int degree = index::recommended_degree, Schema schema = Schema{})
       : records_{page_size}, btree_{degree}, table_{records_, btree_, std::move(schema)} {}
 
-  /// \brief Acceso al almacen de registros.
+  /// \brief Access to the record store.
   [[nodiscard]] auto records() noexcept -> RecordStore& { return records_; }
 
-  /// \brief Acceso de solo lectura al almacen de registros.
+  /// \brief Read-only access to the record store.
   [[nodiscard]] auto records() const noexcept -> const RecordStore& { return records_; }
 
-  /// \brief Acceso al indice.
+  /// \brief Access to the index.
   [[nodiscard]] auto index() noexcept -> index::Index& { return btree_; }
 
-  /// \brief Acceso de solo lectura al indice.
+  /// \brief Read-only access to the index.
   [[nodiscard]] auto index() const noexcept -> const index::Index& { return btree_; }
 
-  /// \brief Acceso concreto al arbol B, para estadisticas de insercion y trazas.
+  /// \brief Concrete access to the B-tree, for insertion statistics and traces.
   [[nodiscard]] auto btree() noexcept -> index::BTree& { return btree_; }
 
-  /// \brief Acceso concreto de solo lectura al arbol B.
+  /// \brief Concrete read-only access to the B-tree.
   [[nodiscard]] auto btree() const noexcept -> const index::BTree& { return btree_; }
 
-  /// \brief Acceso a la tabla.
+  /// \brief Access to the table.
   [[nodiscard]] auto table() noexcept -> Table& { return table_; }
 
-  /// \brief Acceso de solo lectura a la tabla.
+  /// \brief Read-only access to the table.
   [[nodiscard]] auto table() const noexcept -> const Table& { return table_; }
 
   private:
-  /// \brief Almacen de registros paginado.
+  /// \brief Paged record store.
   PageManager records_;
 
-  /// \brief Indice sobre la clave primaria.
+  /// \brief Index over the primary key.
   index::BTree btree_;
 
-  /// \brief Tabla que combina almacen e indice.
+  /// \brief Table that combines store and index.
   Table table_;
 };
 
 }  // namespace kravidb::storage
 
-/// \brief Imprime el mensaje de arranque del motor.
+/// \brief Prints the engine startup message.
 export void init_storage();
