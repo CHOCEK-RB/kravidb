@@ -1,6 +1,4 @@
 node_modules
 dist
 .svelte-kit
-*.ts
-*.json
-*.css
+*.md
