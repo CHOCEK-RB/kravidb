@@ -30,6 +30,16 @@ auto parse_port(int argc, char** argv) -> int {
   return kravidb::api::default_api_port;
 }
 
+/// \brief Lee la direccion de escucha desde la variable de entorno KRAVIDB_BIND.
+/// \return La direccion indicada, o loopback si no se configuro.
+auto parse_bind_address() -> std::string {
+  const char* raw = std::getenv("KRAVIDB_BIND");
+  if (raw == nullptr || *raw == '\0') {
+    return "127.0.0.1";
+  }
+  return raw;
+}
+
 /// \brief Lee el grado del arbol desde la variable de entorno KRAVIDB_DEGREE.
 /// \return El grado indicado, o el grado por defecto si no es valido.
 auto parse_degree() -> int {
@@ -51,5 +61,5 @@ auto parse_degree() -> int {
 }  // namespace
 
 auto main(int argc, char** argv) -> int {
-  return kravidb::api::run_server(parse_port(argc, argv), parse_degree());
+  return kravidb::api::run_server(parse_port(argc, argv), parse_degree(), parse_bind_address());
 }

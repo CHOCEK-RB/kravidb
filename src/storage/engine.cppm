@@ -30,8 +30,14 @@ class StorageEngine final {
   /// \brief Acceso al almacen de registros.
   [[nodiscard]] auto records() noexcept -> RecordStore& { return records_; }
 
+  /// \brief Acceso de solo lectura al almacen de registros.
+  [[nodiscard]] auto records() const noexcept -> const RecordStore& { return records_; }
+
   /// \brief Acceso al indice.
   [[nodiscard]] auto index() noexcept -> index::Index& { return btree_; }
+
+  /// \brief Acceso de solo lectura al indice.
+  [[nodiscard]] auto index() const noexcept -> const index::Index& { return btree_; }
 
   /// \brief Acceso concreto al arbol B, para estadisticas de insercion y trazas.
   [[nodiscard]] auto btree() noexcept -> index::BTree& { return btree_; }
@@ -41,6 +47,9 @@ class StorageEngine final {
 
   /// \brief Acceso a la tabla.
   [[nodiscard]] auto table() noexcept -> Table& { return table_; }
+
+  /// \brief Acceso de solo lectura a la tabla.
+  [[nodiscard]] auto table() const noexcept -> const Table& { return table_; }
 
   private:
   /// \brief Almacen de registros paginado.

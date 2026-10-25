@@ -54,9 +54,18 @@ add_files(
     "src/storage/**.cppm",
     "src/index/**.cppm",
     "src/api/json.cppm",
-    "src/api/serialization.cppm"
+    "src/api/serialization.cppm",
+    "src/api/request.cppm",
+    "src/api/handlers.cppm"
 )
-add_files("src/index/**.cpp", "src/storage/**.cpp", "src/api/json.cpp", "src/api/serialization.cpp")
+add_files(
+    "src/index/**.cpp",
+    "src/storage/**.cpp",
+    "src/api/json.cpp",
+    "src/api/serialization.cpp",
+    "src/api/request.cpp",
+    "src/api/handlers.cpp"
+)
 
 add_includedirs("src")
 add_packages("gtest")
