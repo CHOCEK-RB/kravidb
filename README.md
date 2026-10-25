@@ -203,8 +203,9 @@ kravidb/
 │   └── api/main.cpp          # Punto de entrada del servidor HTTP
 ├── benchmarks/               # Arnés de rendimiento Google Benchmark
 │   └── benchmark.cpp         # Comparativa Index Scan vs Full Table Scan
-├── docs/                     # Documentación generada con `xmake docs` (ignorada)
-│   └── adr/                  # Decisiones de arquitectura
+├── docs/
+│   ├── adr/                  # Decisiones de arquitectura
+│   └── md/                   # Documentación generada con `xmake docs` (ignorada)
 ├── src/
 │   ├── kravidb.cppm          # Preludio público exportador del motor
 │   ├── api/                  # API HTTP REST (cpp-httplib)
