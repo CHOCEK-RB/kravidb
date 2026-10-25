@@ -59,6 +59,7 @@ jobs:
             base="${{ github.event.pull_request.base.sha }}"
             files=$(git diff --name-only --diff-filter=d "$base...HEAD" \
               -- ':(glob)src/**/*.cpp' ':(glob)src/**/*.cppm' \
+                 ':(glob)apps/**/*.cpp' ':(glob)apps/**/*.cppm' \
                  ':(glob)tests/**/*.cpp' ':(glob)tests/**/*.cppm' | paste -sd' ' -)
           fi
           echo "files=$files" >> "$GITHUB_OUTPUT"
