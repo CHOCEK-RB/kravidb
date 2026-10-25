@@ -1,12 +1,11 @@
 ---
-# Configuracion de clang-tidy para la suite de pruebas.
+# clang-tidy configuration for the test suite.
 #
-# Los macros de GoogleTest (TEST/TEST_F/EXPECT_THROW) generan constructores
-# estaticos que pueden lanzar, usan `new` sobre punteros no propietarios y
-# emiten `goto`; esos checks de estilo no aplican al codigo de test. Ademas el
-# analisis de flujo no modela ASSERT_TRUE/EXPECT_TRUE, por lo que el chequeo de
-# `std::optional` solo produce falsos positivos. Se heredan el resto de reglas
-# del `.clang-tidy` raiz.
+# GoogleTest macros (TEST/TEST_F/EXPECT_THROW) generate static constructors
+# that can throw, use `new` on non-owning pointers and emit `goto`; those style
+# checks do not apply to test code. Flow analysis also does not model
+# ASSERT_TRUE/EXPECT_TRUE, so the `std::optional` check only produces false
+# positives. The remaining rules are inherited from the root `.clang-tidy`.
 InheritParentConfig: true
 Checks: >
   -cert-err58-cpp,
