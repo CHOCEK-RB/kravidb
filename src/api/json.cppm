@@ -1,5 +1,5 @@
 /// \file
-/// \brief Utilidades minimas de JSON y extraccion de campos de una tupla.
+/// \brief Minimal JSON utilities and tuple field extraction.
 
 export module api.json;
 
@@ -8,24 +8,24 @@ import storage.tuple;
 
 export namespace kravidb::api {
 
-/// \brief Escapa los caracteres especiales de JSON presentes en `text`.
-/// \param text Texto de entrada.
-/// \return El texto escapado, sin comillas envolventes.
+/// \brief Escapes the JSON special characters present in `text`.
+/// \param text Input text.
+/// \return The escaped text, without enclosing quotes.
 [[nodiscard]] auto json_escape(std::string_view text) -> std::string;
 
-/// \brief Devuelve `text` entre comillas y con los caracteres escapados.
-/// \param text Texto de entrada.
-/// \return Un literal de cadena JSON valido.
+/// \brief Returns `text` quoted and with its characters escaped.
+/// \param text Input text.
+/// \return A valid JSON string literal.
 [[nodiscard]] auto json_quote(std::string_view text) -> std::string;
 
-/// \brief Extrae la clave primaria (primer campo entero) de una tupla.
-/// \param tuple Tupla serializada y deserializada.
-/// \return La clave, o `0` si el primer campo no es un entero.
+/// \brief Extracts the primary key (first integer field) from a tuple.
+/// \param tuple Serialized and deserialized tuple.
+/// \return The key, or `0` when the first field is not an integer.
 [[nodiscard]] auto tuple_key(const storage::Tuple& tuple) -> std::int64_t;
 
-/// \brief Extrae el primer campo de texto de una tupla.
-/// \param tuple Tupla serializada y deserializada.
-/// \return El primer `Varchar`, o la clave como texto si no hay ninguno.
+/// \brief Extracts the first text field from a tuple.
+/// \param tuple Serialized and deserialized tuple.
+/// \return The first `Varchar`, or the key as text when there is none.
 [[nodiscard]] auto tuple_value(const storage::Tuple& tuple) -> std::string;
 
 }  // namespace kravidb::api

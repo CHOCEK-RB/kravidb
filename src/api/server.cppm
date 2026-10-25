@@ -1,5 +1,5 @@
 /// \file
-/// \brief Servidor HTTP de la API de kravidb.
+/// \brief HTTP server of the kravidb API.
 
 export module api.server;
 
@@ -8,14 +8,14 @@ export import api.handlers;
 
 export namespace kravidb::api {
 
-/// \brief Puerto de escucha por defecto de la API.
+/// \brief Default listen port of the API.
 inline constexpr int default_api_port = 8080;
 
-/// \brief Arranca el servidor HTTP bloqueante en el puerto indicado.
-/// \param port Puerto de escucha.
-/// \param degree Grado inicial del arbol B.
-/// \param bind_address Direccion de escucha; por defecto solo loopback.
-/// \return 0 si el servidor se detiene sin errores, 1 si no puede arrancar.
+/// \brief Starts the blocking HTTP server on the given port.
+/// \param port Listen port.
+/// \param degree Initial B-tree degree.
+/// \param bind_address Listen address; loopback only by default.
+/// \return 0 when the server stops without errors, 1 when it cannot start.
 // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 auto run_server(int port, int degree, std::string_view bind_address = "127.0.0.1") -> int;
 
