@@ -23,16 +23,16 @@ Documentación del diseño y de cada pieza del frontend. Léelo antes de tocar
 cd web
 bun install
 bun run dev        # http://127.0.0.1:5173
-bun run check:all  # format + lint:biome + eslint + svelte-check
+bun run check:all  # format + eslint + svelte-check + knip
 bun run build      # vite build -> dist/
 bun run check:knip # exports y dependencias sin uso
 ```
 
 - Gates obligatorios antes de dar algo por terminado: `check:all` (0 errores y
   **0 warnings**: `svelte-check --threshold warning`) y `build`.
-- `check:knip` debe salir sin hallazgos; los 4 "configuration hints"
-  (`tailwindcss` y `@types/*` en `ignoreDependencies`, entry `src/main.ts`
-  redundante, extensión `.css`) son informativos y no fallan.
+- En CI se usa `check:all:ci`, que no escribe archivos:
+  `format:check + lint + check:types + check:knip`.
+- `check:knip` debe salir sin hallazgos ni configuration hints.
 - Al editar un `.svelte` con el dev server vivo, **`touch` el archivo**: vite
   puede servir un transform cacheado y verás el cambio a medias. Después recarga
   la pestaña.
@@ -339,9 +339,9 @@ transiciones. Si añades animación, no la excluyas de ese bloque.
 - Accesibilidad: los controles son `<button>` reales con `aria-label`; los
   contenedores puramente decorativos van `aria-hidden="true"`. El texto dentro de
   un `aria-hidden` no es consultable por herramientas de espera por texto.
-- Formato: biome (TS/CSS, comillas simples, sin punto y coma, ancho 100) y
-  prettier + `prettier-plugin-svelte` para `.svelte`. `biome.json` necesita
-  `css.parser.tailwindDirectives: true` y la excepción a `noImportantStyles` en CSS.
+- Formato: prettier (TS, CSS, JSON, HTML y `.svelte`, con
+  `prettier-plugin-svelte` y `prettier-plugin-tailwindcss`): comillas simples,
+  sin punto y coma, ancho 100. `format:check` verifica sin escribir.
 - No dejes código muerto: `knip` y `svelte-check` lo detectan. Los cinco
   componentes antiguos (`ActivityLog`, `BTreeCanvas`, `ControlsHeader`,
   `ScanComparator`, `SlottedPageViewer`) y `SlottedPageMap` ya se borraron; no los

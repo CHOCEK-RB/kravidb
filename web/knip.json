@@ -1,7 +1,6 @@
 {
-  "$schema": "https://unpkg.com/knip@5/schema.json",
-  "entry": ["src/main.ts"],
-  "project": ["src/**/*.{ts,svelte}"],
-  "ignoreDependencies": ["tailwindcss", "depcheck", "@types/*"],
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": ["src/app.css"],
+  "project": ["src/**/*.{ts,svelte,css}"],
   "ignoreExportsUsedInFile": true
 }

@@ -1,5 +1,5 @@
-@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700;800&display=swap");
-@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700;800&display=swap');
+@import 'tailwindcss';
 
 @theme {
   --color-bg: #0c0b16;
@@ -12,8 +12,8 @@
   --color-mint: #48e5c2;
   --color-peach: #ffaa80;
   --color-ember: #ff6384;
-  --font-ui: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-ui: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
 }
 
 :root {
@@ -58,8 +58,8 @@
   --warn: #fde047;
   --hot: #ff6384;
 
-  --font-ui: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-ui: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
 
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -86,7 +86,7 @@ body {
 
 /* Grano fino: textura sutil. */
 body::before {
-  content: "";
+  content: '';
   position: fixed;
   inset: 0;
   z-index: 0;
@@ -146,7 +146,7 @@ button {
 
 /* Filo cromático superior: cada panel declara su matiz con --tint. */
 .panel::before {
-  content: "";
+  content: '';
   position: absolute;
   top: -1px;
   left: 16px;
