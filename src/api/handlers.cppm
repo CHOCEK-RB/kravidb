@@ -12,6 +12,8 @@ import storage.tuple;
 export namespace kravidb::api {
 
 /// \brief Grado del arbol B con el que arranca la API.
+/// \details Se arranca en 2 para que el visualizador muestre divisiones; el
+/// indice usa `index::recommended_degree` (64) por defecto.
 inline constexpr int default_engine_degree = 2;
 
 /// \brief Grado minimo admitido para el arbol B.

@@ -59,6 +59,7 @@ auto make_engine(int degree) -> std::unique_ptr<storage::StorageEngine> {
     std::int64_t key;
     std::string_view name;
   };
+  // La API es la fuente de verdad; el mock web replica estos seeds como fallback.
   const std::vector<SeedRow> rows = {
       {.key = 10, .name = "Ada Lovelace"},    {.key = 20, .name = "Alan Turing"},
       {.key = 5, .name = "Grace Hopper"},     {.key = 15, .name = "Linus Torvalds"},
