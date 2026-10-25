@@ -134,3 +134,37 @@ jobs:
 
       - name: Run unit tests (Release)
         run: xmake test
+
+  web:
+    name: Web (Svelte)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.3
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Check formatting
+        run: bun run format:check
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Check types
+        run: bun run check:types
+
+      - name: Check unused exports and dependencies
+        run: bun run check:knip
+
+      - name: Build
+        run: bun run build
