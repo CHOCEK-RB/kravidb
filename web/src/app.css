@@ -17,8 +17,8 @@
 }
 
 :root {
-  /* Identidad "Cute Cyber-Dark":
-     Fondo terciopelo ciruela + acentos sakura, lavanda, menta pastel y melocotón */
+  /* "Cute Cyber-Dark" identity:
+     plum velvet background + sakura, lavender, pastel mint and peach accents */
   --bg: #0c0b16;
   --bg-2: #141224;
   --panel: #18152b;
@@ -84,7 +84,7 @@ body {
   overflow-x: hidden;
 }
 
-/* Grano fino: textura sutil. */
+/* Fine grain: subtle texture. */
 body::before {
   content: '';
   position: fixed;
@@ -114,7 +114,7 @@ button {
   font-family: inherit;
 }
 
-/* Micro-scrollbars a juego con el tema cute dark */
+/* Micro scrollbars matching the cute dark theme */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -133,7 +133,7 @@ button {
   background-clip: padding-box;
 }
 
-/* Cabeceras de panel reutilizables */
+/* Reusable panel headers */
 .panel {
   position: relative;
   border: 1px solid var(--line);
@@ -144,7 +144,7 @@ button {
     0 16px 36px -20px rgba(4, 3, 10, 0.8);
 }
 
-/* Filo cromático superior: cada panel declara su matiz con --tint. */
+/* Top color edge: each panel declares its hue with --tint. */
 .panel::before {
   content: '';
   position: absolute;

@@ -1,6 +1,6 @@
 /**
- * Rellena un payload hasta un tamaño realista (~300 B) para que la losa de 4 KB
- * se llene a un ritmo comparable al de una página real en disco.
+ * Pads a payload to a realistic size (~300 B) so the 4 KB slab fills at a
+ * rate comparable to a real page on disk.
  */
 export function padPayload(key: number, raw: string, target = 300): string {
   let body = raw.trim()

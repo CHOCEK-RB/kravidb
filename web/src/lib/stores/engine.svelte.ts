@@ -10,7 +10,7 @@ export interface LogEntry {
   detail: string
 }
 
-/** Marca temporal de la última escritura, usada por la losa para animar la caída. */
+/** Timestamp of the last write, used by the slab to animate the drop. */
 export interface InsertMark {
   pageId: number
   slotId: number
@@ -18,7 +18,7 @@ export interface InsertMark {
   at: number
 }
 
-/** Hallazgo de una clave por Index Scan: ilumina la losa y la tupla destino (RowID). */
+/** Key found by Index Scan: highlights the slab and the target tuple (RowID). */
 export interface LocateMark {
   pageId: number
   slotId: number
@@ -26,14 +26,14 @@ export interface LocateMark {
   at: number
 }
 
-/** Muestra periódica de la carga masiva: alimenta el trazado de throughput en vivo. */
+/** Periodic sample of the bulk load: feeds the live throughput trace. */
 export interface BulkSample {
   count: number
   opsPerSec: number
   splits: number
 }
 
-/** Estado de una carga masiva: progreso, divisiones y throughput medido. */
+/** Bulk load state: progress, splits and measured throughput. */
 export interface BulkState {
   current: number
   total: number
@@ -44,7 +44,7 @@ export interface BulkState {
   samples: BulkSample[]
 }
 
-/** Campo de la anatomía de tupla que el cursor señala (sincroniza con la lente de bytes). */
+/** Tuple anatomy field the cursor points at (syncs with the byte lens). */
 export type ArchField = 'pageId' | 'slotId' | 'payload'
 
 export class EngineStore {
@@ -60,23 +60,23 @@ export class EngineStore {
   public highlightedKey = $state<number | null>(null)
   public lastSplitOccurred = $state<boolean>(false)
   public promotedKey = $state<number | null>(null)
-  /** Página que acaba de desbordar: dispara la sacudida de tensión. */
+  /** Page that just overflowed: triggers the strain shake. */
   public strainedPageId = $state<number | null>(null)
-  /** Última escritura: dispara la caída + asentamiento de la tupla. */
+  /** Last write: triggers the tuple drop + settling. */
   public lastInsert = $state<InsertMark | null>(null)
-  /** La raíz acaba de dividirse: el árbol gana un nivel (crecimiento en altura). */
+  /** The root just split: the tree gains a level (height growth). */
   public lastNewRoot = $state<boolean>(false)
-  /** El Index Scan acaba de localizar una clave: resalta su RowID en la losa física. */
+  /** Index Scan just located a key: highlights its RowID on the physical slab. */
   public located = $state<LocateMark | null>(null)
-  /** Progreso del lote (playback): `current/total` mientras se inserta en serie. */
+  /** Batch progress (playback): `current/total` while inserting serially. */
   public batch = $state<{ current: number; total: number } | null>(null)
-  /** Carga masiva en curso o recién terminada (progreso + throughput). */
+  /** Bulk load in progress or just finished (progress + throughput). */
   public bulk = $state<BulkState | null>(null)
-  /** Modo masa: el árbol es demasiado grande para el render interactivo. */
+  /** Mass mode: the tree is too large for interactive rendering. */
   public massMode = $state<boolean>(false)
-  /** Campo resaltado en el panel de anatomía (sincroniza con la lente de bytes). */
+  /** Highlighted field in the anatomy panel (syncs with the byte lens). */
   public archField = $state<ArchField | null>(null)
-  /** Grado mínimo del árbol: cada nodo guarda hasta 2t-1 claves. */
+  /** Minimum degree of the tree: each node stores up to 2t-1 keys. */
   public degree = $state<number>(2)
   public playbackSpeed = $state<number>(1)
   public isLoading = $state<boolean>(false)
@@ -91,13 +91,13 @@ export class EngineStore {
     void this.bootstrap()
   }
 
-  /** Lee la configuracion del motor y arranca el estado inicial. */
+  /** Reads the engine configuration and starts the initial state. */
   private async bootstrap() {
     try {
       const config = await api.getConfig()
       this.degree = config.degree
     } catch {
-      // Sin configuracion disponible se conserva el grado por defecto.
+      // Without configuration available, the default degree is kept.
     }
     await this.init()
   }
@@ -118,7 +118,7 @@ export class EngineStore {
     this.logs = [entry, ...this.logs.slice(0, 49)]
   }
 
-  /** Ids de página referenciados por el árbol, ordenados. */
+  /** Page IDs referenced by the tree, sorted. */
   public get pageIds(): number[] {
     const ids: number[] = []
     const add = (id: number) => {
@@ -187,11 +187,11 @@ export class EngineStore {
   }
 
   public async refreshPages() {
-    // En modo masa no se materializan las losas: con t=2 serían miles.
+    // In mass mode slabs are not materialized: with t=2 there would be thousands.
     if (this.massMode) return
     const ids = this.pageIds
-    // Tolerante a 404: al reconstruir el árbol con otro grado las páginas
-    // pueden desaparecer y no debe tumbar el refresco completo.
+    // Tolerant to 404: when rebuilding the tree with another degree, pages
+    // can disappear and the whole refresh must not fail.
     const results = await Promise.all(
       ids.map(async (id) => {
         try {
@@ -218,7 +218,7 @@ export class EngineStore {
     try {
       this.currentPage = await api.getPage(pageId)
     } catch {
-      // La página ya no existe (reconstrucción/recarga): recae en el refresco.
+      // The page no longer exists (rebuild/reload): falls back to the refresh.
       await this.refreshPages()
       return
     }
@@ -262,9 +262,9 @@ export class EngineStore {
 
       await this.refreshTree()
 
-      // Escenificación en dos tiempos: primero corre la animación estructural
-      // (mediana, split, crecimiento en altura) y recién después aterriza la
-      // tupla en la losa, para que la primera vista no se lea de golpe.
+      // Two-phase staging: the structural animation runs first
+      // (median, split, height growth) and only then the tuple lands
+      // on the slab, so the first view does not read as one jump.
       if (result.split_occurred) {
         await new Promise((r) => setTimeout(r, 900 / this.playbackSpeed))
       }
@@ -272,7 +272,7 @@ export class EngineStore {
       this.selectedPageId = result.target_page_id
       await this.refreshPages()
 
-      // ¿Se materializó una losa nueva? La anterior fue la que desbordó.
+      // Was a new slab materialized? The previous one was the one that overflowed.
       const previousMax = previousIds.length ? Math.max(...previousIds) : 1
       if (!previousIds.includes(result.target_page_id) && result.target_page_id !== previousMax) {
         this.strain(previousMax)
@@ -302,7 +302,7 @@ export class EngineStore {
     }, 1400)
   }
 
-  /** Marca el instante en que nace una raíz nueva (un nivel más de altura). */
+  /** Marks the moment a new root is born (one more level of height). */
   private markRoot() {
     if (this.rootTimer) clearTimeout(this.rootTimer)
     this.lastNewRoot = true
@@ -311,7 +311,7 @@ export class EngineStore {
     }, 1200)
   }
 
-  /** Marca el RowID localizado por el Index Scan para iluminarlo en la losa. */
+  /** Marks the RowID located by the Index Scan to light it up on the slab. */
   private locate(pageId: number, slotId: number, key: number) {
     if (this.locateTimer) clearTimeout(this.locateTimer)
     this.located = { pageId, slotId, key, at: Date.now() }
@@ -371,9 +371,9 @@ export class EngineStore {
   }
 
   /**
-   * Carga masiva en bloque: inserta N tuplas sin materializar el render por
-   * operación (con t=2, N=50k daría ~25k nodos y ~4k losas). Cede al event
-   * loop cada trozo para mantener la UI viva y reporta throughput real.
+   * Bulk load in chunks: inserts N tuples without materializing the render per
+   * operation (with t=2, N=50k would give ~25k nodes and ~4k slabs). Yields to
+   * the event loop every chunk to keep the UI alive and reports real throughput.
    */
   public async bulkLoad(total: number) {
     if (this.isLoading) return
@@ -390,7 +390,7 @@ export class EngineStore {
       'Inserción en bloque: se miden divisiones, altura y throughput real.',
     )
 
-    // Permutación sembrada: claves distintas en orden aleatorio (fuerza splits variados).
+    // Seeded permutation: distinct keys in random order (forces varied splits).
     const order = Array.from({ length: total }, (_, i) => i)
     let seed = 0x9e3779b9
     const rnd = () => {
@@ -406,7 +406,7 @@ export class EngineStore {
       order[j] = tmp
     }
 
-    // Claves y cargas útiles precalculadas: el bucle sólo mide la ida y vuelta HTTP.
+    // Precomputed keys and payloads: the loop only measures the HTTP round trip.
     const items = order.map((rank) => {
       const key = 100000 + rank
       return {
@@ -416,7 +416,7 @@ export class EngineStore {
     })
 
     const CHUNK = 400
-    // Los navegadores limitan a ~6 conexiones por origen en HTTP/1.1: 6 obreros es el óptimo.
+    // Browsers limit HTTP/1.1 to ~6 connections per origin: 6 workers is the optimum.
     const CONCURRENCY = 6
     let current = 0
     try {
@@ -477,7 +477,7 @@ export class EngineStore {
     }
   }
 
-  /** Reconstruye el árbol con otro grado t conservando las tuplas almacenadas. */
+  /** Rebuilds the tree with another degree t, keeping the stored tuples. */
   public async setDegree(degree: number) {
     if (degree === this.degree || this.isLoading) {
       return
