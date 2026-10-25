@@ -7,7 +7,7 @@
   <a href="https://xmake.io"><img src="https://img.shields.io/badge/build-xmake-2563EB?style=flat-square" alt="xmake"></a>
   <a href="https://clang.llvm.org/"><img src="https://img.shields.io/badge/clang-22-38BDF8?style=flat-square&logo=llvm&logoColor=white" alt="Clang 22"></a>
   <a href="https://github.com/CHOCEK-RB/kravidb/actions/workflows/ci.yml"><img src="https://github.com/CHOCEK-RB/kravidb/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <img src="https://img.shields.io/badge/tests-55%20passed-brightgreen?style=flat-square" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-78%20passed-brightgreen?style=flat-square" alt="Tests">
   <img src="https://img.shields.io/badge/version-0.1.0-22D3EE?style=flat-square" alt="Version 0.1.0">
 
   <br><br>
@@ -166,7 +166,7 @@ Abre [http://localhost:8080](http://localhost:8080) en el navegador para interac
 
 ### Pruebas automatizadas (GoogleTest)
 
-La suite de pruebas contiene **55 casos automatizados** cubriendo desbordamiento de nodos, división de raíz, inserciones masivas ($10^4$ y $10^5$ claves), integridad de `RowID`, serialización de tuplas y validación de esquemas con AddressSanitizer y UndefinedBehaviorSanitizer:
+La suite de pruebas contiene **78 casos automatizados** cubriendo desbordamiento de nodos, división de raíz, inserciones masivas ($10^4$ y $10^5$ claves), integridad de `RowID`, serialización de tuplas, validación de esquemas y rutas de la API con AddressSanitizer y UndefinedBehaviorSanitizer:
 
 ```bash
 # Ejecutar la suite completa de pruebas unitarias
@@ -198,14 +198,19 @@ xmake run benchmarks
 ```
 kravidb/
 ├── assets/                   # Recursos gráficos (banner, diagramas)
+├── apps/
+│   ├── cli/main.cpp          # Punto de entrada de la CLI
+│   └── api/main.cpp          # Punto de entrada del servidor HTTP
 ├── benchmarks/               # Arnés de rendimiento Google Benchmark
 │   └── benchmark.cpp         # Comparativa Index Scan vs Full Table Scan
-├── docs/                     # Documentación técnica generada
+├── docs/                     # Documentación generada con `xmake docs` (ignorada)
+│   └── adr/                  # Decisiones de arquitectura
 ├── src/
 │   ├── kravidb.cppm          # Preludio público exportador del motor
-│   ├── main.cpp              # Punto de entrada de la aplicación
-│   ├── api/                  # Servidor HTTP REST (cpp-httplib)
+│   ├── api/                  # API HTTP REST (cpp-httplib)
 │   │   ├── json.{cpp,cppm}   # Serializador JSON ligero
+│   │   ├── request.*         # Parser del subconjunto JSON de las rutas
+│   │   ├── handlers.*        # Handlers puros, sin transporte
 │   │   ├── serialization.*   # Mapeo de estado del motor al contrato web
 │   │   └── server.{cpp,cppm} # Rutas REST y montaje de activos estáticos
 │   ├── index/                # Módulo de indexación B-Tree
@@ -220,7 +225,7 @@ kravidb/
 │       ├── schema.cppm       # Definición de columnas y catálogo de tipos
 │       ├── table.{cpp,cppm}  # Abstracción de tabla con validación de tuplas
 │       └── tuple.cppm        # Serializador binario INT y VARCHAR
-├── tests/                    # Suite de 55 pruebas unitarias con GoogleTest
+├── tests/                    # Suite de 78 pruebas unitarias con GoogleTest
 ├── web/                      # Visualizador interactivo en Svelte + Vite
 ├── .github/workflows/
 │   └── ci.yml                # Pipeline de integración continua
