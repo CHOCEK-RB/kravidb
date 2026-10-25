@@ -60,7 +60,8 @@ jobs:
             files=$(git diff --name-only --diff-filter=d "$base...HEAD" \
               -- ':(glob)src/**/*.cpp' ':(glob)src/**/*.cppm' \
                  ':(glob)apps/**/*.cpp' ':(glob)apps/**/*.cppm' \
-                 ':(glob)tests/**/*.cpp' ':(glob)tests/**/*.cppm' | paste -sd' ' -)
+                 ':(glob)tests/**/*.cpp' ':(glob)tests/**/*.cppm' \
+                 ':(glob)benchmarks/**/*.cpp' ':(glob)benchmarks/**/*.cppm' | paste -sd' ' -)
           fi
           echo "files=$files" >> "$GITHUB_OUTPUT"
           echo "Lint scope: ${files:-(all sources)}"
