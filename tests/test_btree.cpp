@@ -246,7 +246,8 @@ TEST(BTreeEdge, DuplicateKeysAreStoredStructurally) {
   EXPECT_EQ(ordered.size(), count);
   EXPECT_TRUE(std::ranges::all_of(ordered, [](Key key) { return key == arbitrary_key; }));
 
-  // El contrato no define cual duplicado devuelve `search`, solo que sea uno valido.
+  // El contrato permite duplicados en el indice; `Table` impone la unicidad de la PK.
+  // `search` puede devolver cualquiera de las entradas con la clave duplicada.
   const auto found = tree.search(arbitrary_key);
   ASSERT_TRUE(found.has_value());
   EXPECT_GE(*found, RowID{1});
@@ -398,6 +399,13 @@ TEST(BTreeInsertStats, ReportsNoSplitWhenItFits) {
   EXPECT_FALSE(stats.split_occurred);
   EXPECT_FALSE(stats.new_root_created);
   EXPECT_FALSE(stats.promoted_key.has_value());
+
+  BTree plain{minimum_degree};
+  plain.insert(arbitrary_key, arbitrary_row);
+  const auto last = plain.last_insert_stats();
+  EXPECT_FALSE(last.split_occurred);
+  EXPECT_FALSE(last.new_root_created);
+  EXPECT_FALSE(last.promoted_key.has_value());
 }
 
 TEST(BTreeSearchTrace, RecordsPathOnHit) {

@@ -11,11 +11,21 @@ export import index.index;
 
 export namespace kravidb::storage {
 
+/// \brief Resultado de una insercion en la tabla.
+struct InsertResult {
+  /// \brief Localizador del registro almacenado.
+  RowID row_id{0};
+
+  /// \brief Rastro estructural de la insercion en el indice.
+  index::InsertStats index_stats{};
+};
+
 /// \brief Tabla que persiste tuplas y las indexa por clave primaria.
 ///
 /// El primer campo de cada tupla debe ser un entero de 64 bits y actua como
-/// clave primaria (PK). La tabla no posee el almacen ni el indice: los recibe por
-/// referencia en la construccion. Opcionalmente recibe un `Schema` para validar campos.
+/// clave primaria (PK). La tabla rechaza las PK duplicadas. No posee el almacen
+/// ni el indice: los recibe por referencia en la construccion. Opcionalmente
+/// recibe un `Schema` para validar campos.
 class Table final {
   public:
   /// \brief Construye la tabla sobre un almacen y un indice existentes, con esquema opcional.
@@ -30,9 +40,10 @@ class Table final {
 
   /// \brief Inserta una tupla y la indexa por su clave primaria.
   /// \param tuple Tupla a insertar; el primer campo es la PK.
-  /// \note Lanza `std::invalid_argument` si la tupla esta vacia o si el primer
-  /// campo no es de tipo `Int`.
-  void insert(const Tuple& tuple);
+  /// \return El localizador del registro y el rastro de la insercion en el indice.
+  /// \note Lanza `std::invalid_argument` si la tupla esta vacia, no coincide con
+  /// el esquema, el campo PK no es de tipo `Int` o la PK ya existe.
+  auto insert(const Tuple& tuple) -> InsertResult;
 
   /// \brief Busca una tupla por su clave primaria.
   /// \param key Clave primaria buscada.

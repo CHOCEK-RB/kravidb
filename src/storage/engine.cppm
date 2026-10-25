@@ -18,13 +18,14 @@ export namespace kravidb::storage {
 /// `BTree` y un `Table` que los enlaza, y expone cada componente por referencia.
 class StorageEngine final {
   public:
-  /// \brief Construye el motor con el tamano de pagina y el grado indicados.
+  /// \brief Construye el motor con el tamano de pagina, el grado y el esquema indicados.
   /// \param page_size Tamano de pagina del almacen, en bytes.
   /// \param degree Grado minimo `t` del arbol B del indice.
+  /// \param schema Esquema opcional que valida las tuplas de la tabla.
   // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
   explicit StorageEngine(std::size_t page_size = default_page_size,
-                         int degree = index::recommended_degree)
-      : records_{page_size}, btree_{degree}, table_{records_, btree_} {}
+                         int degree = index::recommended_degree, Schema schema = Schema{})
+      : records_{page_size}, btree_{degree}, table_{records_, btree_, std::move(schema)} {}
 
   /// \brief Acceso al almacen de registros.
   [[nodiscard]] auto records() noexcept -> RecordStore& { return records_; }

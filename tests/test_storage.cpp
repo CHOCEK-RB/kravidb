@@ -315,6 +315,23 @@ TEST(Table, InsertRejectsNonIntPrimaryKey) {
   EXPECT_THROW(table.insert(tuple), std::invalid_argument);
 }
 
+TEST(Table, RejectsDuplicatePrimaryKey) {
+  PageManager records{};
+  BTree index{};
+  Table table{records, index};
+
+  const Tuple original{std::vector<Field>{std::int64_t{7}, std::string{"original"}}};
+  table.insert(original);
+
+  const Tuple duplicate{std::vector<Field>{std::int64_t{7}, std::string{"otro"}}};
+  EXPECT_THROW(table.insert(duplicate), std::invalid_argument);
+
+  EXPECT_EQ(table.scan_all().size(), 1U);
+  const auto found = table.find_by_index(7);
+  ASSERT_TRUE(found.has_value());
+  EXPECT_EQ(*found, original);
+}
+
 TEST(Table, ScanAllReturnsEveryTupleInInsertionOrder) {
   PageManager records{tiny_page};
   BTree index{};
@@ -387,6 +404,24 @@ TEST(StorageEngine, IndexResolvesToStoredRecord) {
   const auto restored = Tuple::deserialize(*stored);
   ASSERT_TRUE(restored.has_value());
   EXPECT_EQ(*restored, expected);
+}
+
+TEST(StorageEngine, AppliesSchemaToApiShape) {
+  const Schema schema{std::vector<ColumnDef>{
+      ColumnDef{.name = "key", .type = FieldType::Int, .is_primary_key = true},
+      ColumnDef{.name = "payload", .type = FieldType::Varchar, .is_primary_key = false},
+  }};
+  StorageEngine engine{default_page_size, kravidb::index::recommended_degree, schema};
+
+  const Tuple row{std::vector<Field>{std::int64_t{42}, std::string{"demo"}}};
+  engine.table().insert(row);
+
+  const auto found = engine.table().find_by_index(42);
+  ASSERT_TRUE(found.has_value());
+  EXPECT_EQ(*found, row);
+
+  const Tuple wrong{std::vector<Field>{std::int64_t{43}, std::int64_t{7}}};
+  EXPECT_THROW(engine.table().insert(wrong), std::invalid_argument);
 }
 
 // ---------------------------------------------------------------------------
