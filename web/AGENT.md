@@ -5,15 +5,17 @@ Documentación del diseño y de cada pieza del frontend. Léelo antes de tocar
 
 ## 0. Estado del proyecto
 
-- `web/` es un **frontend de visualización** para el motor `kravidb`.
-- El backend C++ **es un stub**: `src/main.cpp` y `src/storage/engine.cppm` sólo
-  imprimen la versión. No hay B-Tree, ni páginas ranuradas, ni servidor HTTP.
-- Toda la lógica que se ve corre sobre un **mock en TypeScript**
-  (`src/lib/api/mock.ts`). El contrato (`src/lib/api/types.ts`) es el que deberá
-  cumplir el C++ real.
-- **No se toca** `src/lib/api/types.ts`, ni `client.ts`, ni `mock.ts` para
-  "arreglar" la vista: el mock es la fuente de verdad de los datos.
-- En git, `web/` está **sin trackear** (sólo existe `README.md` raíz).
+- `web/` es un **frontend de visualización** para el motor `kravidb` y está
+  versionado en este repositorio.
+- El backend C++ es real: `kravidb_lib` implementa B-Tree, páginas ranuradas y el
+  motor; `api.server` (cpp-httplib) se expone con el binario `kravidb_api`.
+- Por defecto el frontend usa HTTP (`VITE_USE_MOCK=false` en `.env.development` y
+  `.env.production`). El mock de TypeScript (`src/lib/api/mock.ts`) es el
+  fallback cuando se define `VITE_USE_MOCK=true`; sus seeds deben seguir
+  sincronizados con `src/api/handlers.cpp`.
+- `src/lib/api/types.ts` es la frontera compartida entre el cliente HTTP y el
+  mock. **No cambies el contrato** para "arreglar" la vista; corrige el cliente o
+  el mock.
 
 ## 1. Ejecutar y verificar
 
@@ -322,8 +324,9 @@ transiciones. Si añades animación, no la excluyas de ese bloque.
   No reintroduzcas pestañas que escondan la losa o el árbol.
 - **Un acento por losa.** Con varias páginas en pantalla, el color es la forma más
   rápida de decir "esta tupla vive en aquella losa".
-- **Sin navegador en el backend.** No hay servidor C++ al que apuntar: el mock es
-  el contrato vivo.
+- **El backend sí existe.** `kravidb_api` sirve la API HTTP y monta `web/dist` en
+  el mismo puerto. El mock es solo un fallback para trabajar sin el binario
+  (`VITE_USE_MOCK=true`); no es la fuente de verdad de los datos.
 - **Escala no literal.** La losa de 900 px no son 4096 B; es una metáfora legible
   con las proporciones suficientes para que el desbordamiento se vea.
 
