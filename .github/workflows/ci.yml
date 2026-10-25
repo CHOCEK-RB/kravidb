@@ -76,6 +76,56 @@ jobs:
       - name: Run unit tests (Debug, ASan + UBSan)
         run: xmake test
 
+      - name: HTTP API smoke test
+        run: |
+          set -euo pipefail
+          xmake build kravidb_api
+          port=18080
+          KRAVIDB_DEGREE=4 KRAVIDB_BIND=127.0.0.1 \
+            ./build/linux/x86_64/debug/kravidb_api "$port" > /tmp/kravidb_api.log 2>&1 &
+          api_pid=$!
+          trap 'kill "$api_pid" 2>/dev/null || true; wait "$api_pid" 2>/dev/null || true' EXIT
+
+          ready=0
+          for _ in $(seq 1 50); do
+            if curl -fsS "http://127.0.0.1:$port/api/v1/health" > /dev/null; then
+              ready=1
+              break
+            fi
+            sleep 0.1
+          done
+          if [ "$ready" -ne 1 ]; then
+            cat /tmp/kravidb_api.log
+            exit 1
+          fi
+
+          test "$(curl -fsS "http://127.0.0.1:$port/api/v1/health")" = '{"status":"ok"}'
+          test "$(curl -fsS "http://127.0.0.1:$port/api/v1/config")" = '{"degree":4,"page_size":4096}'
+
+          insert=$(curl -fsS -X POST "http://127.0.0.1:$port/api/v1/btree/insert" \
+            -d '{"key":42,"payload":"demo"}')
+          echo "insert: $insert"
+          curl -fsS "http://127.0.0.1:$port/api/v1/btree/search?key=42" | grep -q '"found":true'
+
+          duplicate=$(curl -sS -o /tmp/duplicate.json -w '%{http_code}' -X POST \
+            "http://127.0.0.1:$port/api/v1/btree/insert" -d '{"key":42,"payload":"otro"}')
+          test "$duplicate" = "409"
+
+          malformed=$(curl -sS -o /tmp/malformed.json -w '%{http_code}' -X POST \
+            "http://127.0.0.1:$port/api/v1/btree/insert" -d '{"key":12abc,"payload":"x"}')
+          test "$malformed" = "400"
+
+          nested=$(curl -sS -o /tmp/nested.json -w '%{http_code}' -X POST \
+            "http://127.0.0.1:$port/api/v1/btree/insert" -d '{"payload":"\"key\":99"}')
+          test "$nested" = "400"
+
+          curl -fsS "http://127.0.0.1:$port/api/v1/page/1" | grep -q '"page_id":1'
+          missing_page=$(curl -sS -o /tmp/missing_page.json -w '%{http_code}' \
+            "http://127.0.0.1:$port/api/v1/page/999")
+          test "$missing_page" = "404"
+
+          test "$(curl -fsS -X POST "http://127.0.0.1:$port/api/v1/reset")" = '{"status":"ok"}'
+
       - name: Configure and build (Release mode)
         run: |
           xmake f -y -c -m release --toolchain=clang --sdk=/usr/lib/llvm-22 --runtimes=c++_shared --ldflags=-lc++abi
