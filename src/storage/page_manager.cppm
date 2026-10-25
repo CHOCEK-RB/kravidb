@@ -124,7 +124,12 @@ class PageManager final : public RecordStore {
   public:
   /// \brief Crea el almacen con el tamano de pagina indicado.
   /// \param page_size Tamano de pagina, en bytes.
-  explicit PageManager(std::size_t page_size = default_page_size) : page_size_{page_size} {}
+  /// \throws std::invalid_argument Si el tamano no cabe en `SlotEntry::offset`.
+  explicit PageManager(std::size_t page_size = default_page_size) : page_size_{page_size} {
+    if (page_size > std::numeric_limits<std::uint16_t>::max()) {
+      throw std::invalid_argument{"PageManager: el tamano de pagina excede SlotEntry"};
+    }
+  }
 
   /// \brief Inserta un registro.
   /// \param record Bytes del registro a almacenar.

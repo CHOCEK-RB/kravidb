@@ -158,6 +158,12 @@ TEST(PageManager, DefaultsToConfiguredPageSize) {
   EXPECT_EQ(store.page_count(), 0U);
 }
 
+TEST(PageManager, RejectsPageSizeThatOverflowsSlotEntry) {
+  constexpr std::size_t max_page_size = std::numeric_limits<std::uint16_t>::max();
+  EXPECT_THROW(PageManager{max_page_size + 1}, std::invalid_argument);
+  EXPECT_NO_THROW(PageManager{max_page_size});
+}
+
 TEST(PageManager, InsertAndReadRoundTrip) {
   PageManager store{tiny_page};
   const auto payload = bytes_of("registro");
