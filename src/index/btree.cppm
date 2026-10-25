@@ -55,18 +55,6 @@ struct SearchTrace {
   SearchStats stats{};
 };
 
-/// \brief Rastro estructural de una insercion.
-struct InsertStats {
-  /// \brief Indica si la insercion provoco al menos una division de nodo.
-  bool split_occurred{false};
-
-  /// \brief Ultima clave promovida al padre, si hubo division.
-  std::optional<Key> promoted_key;
-
-  /// \brief Indica si la raiz cambio porque el arbol crecio en altura.
-  bool new_root_created{false};
-};
-
 /// \brief Arbol B clasico (CLRS) que implementa el contrato `Index`.
 ///
 /// Cada nodo guarda como maximo `2t - 1` claves y tiene como maximo `2t` hijos,
@@ -108,10 +96,16 @@ class BTree final : public Index {
   /// \brief Pone a cero las estadisticas de busqueda.
   void reset_search_stats() noexcept override { last_search_stats_ = SearchStats{}; }
 
-  /// \brief Inserta o reemplaza la asociacion de una clave.
+  /// \brief Inserta una asociacion entre clave y `RowID`.
+  ///
+  /// No impone unicidad: varias entradas pueden compartir la misma clave. La
+  /// unicidad de la clave primaria se valida en `Table`.
   /// \param key Clave a insertar.
   /// \param row_id Localizador asociado.
   void insert(Key key, RowID row_id) override;
+
+  /// \brief Estadisticas de la ultima insercion realizada.
+  [[nodiscard]] auto last_insert_stats() const noexcept -> InsertStats override;
 
   /// \brief Busca una clave y registra sus estadisticas.
   /// \param key Clave buscada.
@@ -164,6 +158,9 @@ class BTree final : public Index {
 
   /// \brief Ultima clave promovida por la ultima insercion instrumentada.
   std::optional<Key> last_split_promoted_key_;
+
+  /// \brief Indica si la ultima insercion hizo crecer la altura del arbol.
+  bool last_new_root_created_{false};
 
   /// \brief Divide el hijo lleno `child`, promoviendo su clave media al padre.
   /// \param parent Nodo padre de `child`.

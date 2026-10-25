@@ -15,6 +15,7 @@ namespace {
 inline constexpr int http_no_content = 204;
 inline constexpr int http_bad_request = 400;
 inline constexpr int http_not_found = 404;
+inline constexpr int http_conflict = 409;
 inline constexpr int http_internal_error = 500;
 
 // Longitud del campo `bio` de los registros semilla.
@@ -188,6 +189,16 @@ auto seed_payload(std::int64_t key, std::string_view name) -> std::string {
   return payload;
 }
 
+// Esquema que la API expone: clave entera y payload de texto.
+auto users_schema() -> kravidb::storage::Schema {
+  return kravidb::storage::Schema{std::vector<kravidb::storage::ColumnDef>{
+      kravidb::storage::ColumnDef{
+          .name = "key", .type = kravidb::storage::FieldType::Int, .is_primary_key = true},
+      kravidb::storage::ColumnDef{
+          .name = "payload", .type = kravidb::storage::FieldType::Varchar, .is_primary_key = false},
+  }};
+}
+
 // Escribe un registro y lo indexa por su clave primaria.
 void seed_row(kravidb::storage::StorageEngine& engine, std::int64_t key, std::string_view name) {
   const auto payload = seed_payload(key, name);
@@ -195,9 +206,7 @@ void seed_row(kravidb::storage::StorageEngine& engine, std::int64_t key, std::st
       kravidb::storage::Field{key},
       kravidb::storage::Field{payload},
   }};
-  const auto bytes = tuple.serialize();
-  const auto row_id = engine.records().insert(bytes);
-  engine.btree().insert_with_stats(key, row_id);
+  engine.table().insert(tuple);
 }
 
 // Serializa el grado y el tamano de pagina del motor activo.
@@ -209,7 +218,7 @@ auto config_to_json(int degree) -> std::string {
 // Crea el motor con el grado indicado y lo siembra con las mismas filas que el mock.
 auto make_engine(int degree) -> std::unique_ptr<kravidb::storage::StorageEngine> {
   auto engine = std::make_unique<kravidb::storage::StorageEngine>(
-      kravidb::storage::default_page_size, degree);
+      kravidb::storage::default_page_size, degree, users_schema());
 
   struct SeedRow {
     std::int64_t key;
@@ -232,7 +241,7 @@ auto make_engine(int degree) -> std::unique_ptr<kravidb::storage::StorageEngine>
 void rebuild_engine(std::unique_ptr<kravidb::storage::StorageEngine>& engine, int degree) {
   const std::vector<kravidb::storage::Tuple> rows = engine->table().scan_all();
   auto fresh = std::make_unique<kravidb::storage::StorageEngine>(
-      kravidb::storage::default_page_size, degree);
+      kravidb::storage::default_page_size, degree, users_schema());
   for (const auto& row : rows) {
     fresh->table().insert(row);
   }
@@ -325,20 +334,19 @@ auto run_server(int port, int degree) -> int {
         }
         const std::scoped_lock lock{mutex};
         try {
-          if (const auto existing = engine->btree().search(*key); existing.has_value()) {
-            const index::InsertStats stats;
-            response.set_content(kravidb::api::insert_to_json(stats, *existing),
-                                 "application/json");
+          if (engine->btree().search(*key).has_value()) {
+            respond_error(response, http_conflict, "clave duplicada");
             return;
           }
           const kravidb::storage::Tuple tuple{std::vector<kravidb::storage::Field>{
               kravidb::storage::Field{*key},
               kravidb::storage::Field{*payload},
           }};
-          const auto bytes = tuple.serialize();
-          const auto row_id = engine->records().insert(bytes);
-          const auto stats = engine->btree().insert_with_stats(*key, row_id);
-          response.set_content(kravidb::api::insert_to_json(stats, row_id), "application/json");
+          const auto result = engine->table().insert(tuple);
+          response.set_content(kravidb::api::insert_to_json(result.index_stats, result.row_id),
+                               "application/json");
+        } catch (const std::invalid_argument& error) {
+          respond_error(response, http_bad_request, error.what());
         } catch (const std::exception& error) {
           respond_error(response, http_internal_error, error.what());
         }

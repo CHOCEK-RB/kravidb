@@ -5,7 +5,7 @@ import storage.row_id;
 
 namespace kravidb::storage {
 
-void Table::insert(const Tuple& tuple) {
+auto Table::insert(const Tuple& tuple) -> InsertResult {
   if (tuple.field_count() == 0) {
     throw std::invalid_argument{"Table: la tupla no puede estar vacia"};
   }
@@ -21,11 +21,19 @@ void Table::insert(const Tuple& tuple) {
   }
 
   const index::Key key = *key_ptr;
+  if (index_.search(key).has_value()) {
+    throw std::invalid_argument{"Table: la clave primaria ya existe"};
+  }
+
   const std::vector<std::byte> record = tuple.serialize();
 
+  // shortcut: el almacen es append-only y no permite deshacer; si index_.insert
+  // falla por falta de memoria, el registro queda sin indexar. Anadir un journal
+  // o borrado en RecordStore si se requiere atomicidad.
   const RowID row_id = records_.insert(record);
 
   index_.insert(key, row_id);
+  return InsertResult{.row_id = row_id, .index_stats = index_.last_insert_stats()};
 }
 
 auto Table::find_by_index(index::Key key) const -> std::optional<Tuple> {
