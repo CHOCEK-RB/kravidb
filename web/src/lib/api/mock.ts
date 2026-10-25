@@ -342,6 +342,8 @@ export class MockEngine implements ApiClient {
   }
 
   private seedInitialData() {
+    // Fallback sin backend; la API es la fuente de verdad. Mantener estos seeds
+    // en sincronia con src/api/handlers.cpp.
     const people = [
       { key: 10, name: 'Ada Lovelace' },
       { key: 20, name: 'Alan Turing' },

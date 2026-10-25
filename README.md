@@ -129,7 +129,7 @@ El índice implementa un Árbol B conforme a la especificación clásica de Corm
   1. **Capacidad de nodo:** Almacena entre 63 y 127 claves de tipo `int64_t` y hasta 128 punteros por nodo.
   2. **Alineación y caché:** Un nodo de $t=64$ agrupa claves y punteros en bloques contiguos de memoria que aprovechan las líneas de caché de CPU (L1/L2/L3) y el tamaño típico de bloque de almacenamiento secundario.
   3. **Profundidad mínima del árbol:** Para un volumen masivo de $1\,000\,000$ de registros, la altura máxima del árbol no excede $h \le \lceil \log_{64}(10^6) \rceil \approx 3$. Esto garantiza que cualquier búsqueda por clave concluye en como máximo 3 saltos de nodo ($< 150 \text{ ns}$).
-  4. **Grado dinámico en visualización:** Para propósitos educativos y de demostración gráfica, el servidor API y el visualizador permiten reconfigurar el grado dinámicamente entre $t = 2$ y $t = 128$.
+  4. **Grado dinámico en visualización:** La API arranca en $t = 2$ para que el visualizador muestre divisiones y permite reconfigurarlo entre $t = 2$ y $t = 64$; $t = 64$ es el default del índice en producción.
 
 <br>
 

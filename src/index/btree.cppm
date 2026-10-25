@@ -9,7 +9,9 @@ export import index.index;
 
 export namespace kravidb::index {
 
-/// \brief Grado minimo por defecto del arbol B.
+/// \brief Grado minimo por defecto del arbol B en produccion.
+/// \details La API arranca en 2 para que el visualizador muestre divisiones;
+/// este valor es el default del indice cuando no se configura otro.
 inline constexpr int recommended_degree = 64;
 
 /// \brief Resultado de una busqueda que ademas informa de sus estadisticas.
