@@ -26,3 +26,7 @@ docs/xml/
 docs/md/
 
 AGENTS.md
+.agents/
+.opencode/
+
+graphify-out/
