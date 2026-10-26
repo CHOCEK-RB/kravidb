@@ -1,5 +1,5 @@
 /// \file
-/// \brief Localizadores de registro: empaquetado y desempaquetado de `RowID`.
+/// \brief Record locators: packing and unpacking of `RowID`.
 
 export module storage.row_id;
 
@@ -7,43 +7,43 @@ import std;
 
 export namespace kravidb::storage {
 
-/// \brief Identificador de pagina (ocupa los 32 bits altos de un `RowID`).
+/// \brief Page identifier (occupies the high 32 bits of a `RowID`).
 using PageID = std::uint32_t;
 
-/// \brief Identificador de ranura dentro de una pagina (32 bits bajos de un `RowID`).
+/// \brief Slot identifier within a page (low 32 bits of a `RowID`).
 using SlotID = std::uint32_t;
 
-/// \brief Localizador fisico de un registro: pagina y ranura empaquetadas en 64 bits.
+/// \brief Physical locator of a record: page and slot packed into 64 bits.
 using RowID = std::uint64_t;
 
-/// \brief Numero de bits reservados para `slot_id` (los bajos).
+/// \brief Number of bits reserved for `slot_id` (the low ones).
 inline constexpr unsigned slot_bits = 32;
 
-/// \brief Mascara que aisla los bits bajos correspondientes a `slot_id`.
+/// \brief Mask that isolates the low bits corresponding to `slot_id`.
 inline constexpr RowID slot_mask = 0xFFFF'FFFFULL;
 
-/// \brief Ubicacion logica de un registro dentro del almacen.
+/// \brief Logical location of a record inside the store.
 struct RowLocation {
-  /// \brief Pagina que contiene el registro.
+  /// \brief Page that contains the record.
   PageID page_id{0};
 
-  /// \brief Ranura ocupada dentro de la pagina.
+  /// \brief Occupied slot within the page.
   SlotID slot_id{0};
 
-  /// \brief Compara dos ubicaciones campo a campo.
+  /// \brief Compares two locations field by field.
   [[nodiscard]] auto operator==(const RowLocation&) const -> bool = default;
 };
 
-/// \brief Empaqueta una ubicacion en un unico `RowID`.
-/// \param location Pagina y ranura a codificar.
-/// \return El `RowID` con la pagina en los 32 bits altos y la ranura en los bajos.
+/// \brief Packs a location into a single `RowID`.
+/// \param location Page and slot to encode.
+/// \return The `RowID` with the page in the high 32 bits and the slot in the low ones.
 [[nodiscard]] constexpr auto encode_row_id(RowLocation location) noexcept -> RowID {
   return (static_cast<RowID>(location.page_id) << slot_bits) | static_cast<RowID>(location.slot_id);
 }
 
-/// \brief Separa un `RowID` en sus componentes de pagina y ranura.
-/// \param row_id Localizador a decodificar.
-/// \return La ubicacion reconstruida a partir del identificador.
+/// \brief Splits a `RowID` into its page and slot components.
+/// \param row_id Locator to decode.
+/// \return The location rebuilt from the identifier.
 [[nodiscard]] constexpr auto decode_row_id(RowID row_id) noexcept -> RowLocation {
   return RowLocation{
       .page_id = static_cast<PageID>(row_id >> slot_bits),

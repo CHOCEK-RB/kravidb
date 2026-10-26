@@ -1,5 +1,5 @@
 /// \file
-/// \brief Fachada de tabla: combina un almacen de registros y un indice.
+/// \brief Table facade: combines a record store and an index.
 
 export module storage.table;
 
@@ -11,60 +11,60 @@ export import index.index;
 
 export namespace kravidb::storage {
 
-/// \brief Resultado de una insercion en la tabla.
+/// \brief Result of an insertion into the table.
 struct InsertResult {
-  /// \brief Localizador del registro almacenado.
+  /// \brief Locator of the stored record.
   RowID row_id{0};
 
-  /// \brief Rastro estructural de la insercion en el indice.
+  /// \brief Structural trace of the insertion in the index.
   index::InsertStats index_stats{};
 };
 
-/// \brief Tabla que persiste tuplas y las indexa por clave primaria.
+/// \brief Table that persists tuples and indexes them by primary key.
 ///
-/// El primer campo de cada tupla debe ser un entero de 64 bits y actua como
-/// clave primaria (PK). La tabla rechaza las PK duplicadas. No posee el almacen
-/// ni el indice: los recibe por referencia en la construccion. Opcionalmente
-/// recibe un `Schema` para validar campos.
+/// The first field of every tuple must be a 64-bit integer and acts as the
+/// primary key (PK). The table rejects duplicate PKs. It owns neither the store
+/// nor the index: it receives them by reference at construction. It optionally
+/// receives a `Schema` to validate fields.
 class Table final {
   public:
-  /// \brief Construye la tabla sobre un almacen y un indice existentes, con esquema opcional.
-  /// \param records Almacen donde se persisten las tuplas (no se posee).
-  /// \param index Indice que asocia la PK con el `RowID` (no se posee).
-  /// \param schema Esquema relacional opcional para validacion de tuplas.
+  /// \brief Builds the table over an existing store and index, with an optional schema.
+  /// \param records Store where the tuples are persisted (not owned).
+  /// \param index Index that associates the PK with the `RowID` (not owned).
+  /// \param schema Optional relational schema for tuple validation.
   Table(RecordStore& records, index::Index& index, Schema schema = Schema{})
       : records_{records}, index_{index}, schema_{std::move(schema)} {}
 
-  /// \brief Esquema relacional de la tabla.
+  /// \brief Relational schema of the table.
   [[nodiscard]] auto schema() const noexcept -> const Schema& { return schema_; }
 
-  /// \brief Inserta una tupla y la indexa por su clave primaria.
-  /// \param tuple Tupla a insertar; el primer campo es la PK.
-  /// \return El localizador del registro y el rastro de la insercion en el indice.
-  /// \note Lanza `std::invalid_argument` si la tupla esta vacia, no coincide con
-  /// el esquema, el campo PK no es de tipo `Int` o la PK ya existe.
+  /// \brief Inserts a tuple and indexes it by its primary key.
+  /// \param tuple Tuple to insert; the first field is the PK.
+  /// \return The locator of the record and the trace of the insertion in the index.
+  /// \note Throws `std::invalid_argument` if the tuple is empty, does not match
+  /// the schema, the PK field is not of type `Int`, or the PK already exists.
   auto insert(const Tuple& tuple) -> InsertResult;
 
-  /// \brief Busca una tupla por su clave primaria.
-  /// \param key Clave primaria buscada.
-  /// \return La tupla encontrada, o `std::nullopt` si no existe.
+  /// \brief Searches a tuple by its primary key.
+  /// \param key Primary key being searched.
+  /// \return The found tuple, or `std::nullopt` if it does not exist.
   [[nodiscard]] auto find_by_index(index::Key key) const -> std::optional<Tuple>;
 
-  /// \brief Recorre y deserializa todas las tuplas del almacen.
-  /// \return Las tuplas encontradas, en orden de pagina y ranura.
-  /// \note Usa `slot_at`, de modo que no incrementa las estadisticas de E/S.
+  /// \brief Walks and deserializes every tuple in the store.
+  /// \return The tuples found, in page and slot order.
+  /// \note Uses `slot_at`, so it does not increment the I/O statistics.
   [[nodiscard]] auto scan_all() const -> std::vector<Tuple>;
 
   private:
   // NOLINTBEGIN(cppcoreguidelines-avoid-const-or-ref-data-members)
-  /// \brief Almacen de registros (referencia no propietaria).
+  /// \brief Record store (non-owning reference).
   RecordStore& records_;
 
-  /// \brief Indice de claves primarias (referencia no propietaria).
+  /// \brief Primary key index (non-owning reference).
   index::Index& index_;
   // NOLINTEND(cppcoreguidelines-avoid-const-or-ref-data-members)
 
-  /// \brief Esquema relacional de la tabla.
+  /// \brief Relational schema of the table.
   Schema schema_;
 };
 

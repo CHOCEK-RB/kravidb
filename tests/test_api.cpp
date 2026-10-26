@@ -155,7 +155,7 @@ TEST(ApiHandlers, RejectsDuplicatePrimaryKeysWithoutWriting) {
   ASSERT_EQ(insert_response(*engine, R"({"key":42,"payload":"demo"})").status, http_ok);
   const auto rows_before = engine->table().scan_all().size();
 
-  const auto duplicate = insert_response(*engine, R"({"key":42,"payload":"otro"})");
+  const auto duplicate = insert_response(*engine, R"({"key":42,"payload":"other"})");
   EXPECT_EQ(duplicate.status, http_conflict);
   EXPECT_EQ(engine->table().scan_all().size(), rows_before);
 }

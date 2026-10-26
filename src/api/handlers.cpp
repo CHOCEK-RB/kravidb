@@ -13,15 +13,15 @@ namespace kravidb::api {
 
 namespace {
 
-// Longitud del campo `bio` de los registros semilla.
+// Length of the `bio` field of seed records.
 constexpr std::size_t seed_bio_length = 255;
 
-// Construye una respuesta de error JSON.
+// Builds a JSON error response.
 auto error_response(int status, std::string_view message) -> ApiResponse {
   return ApiResponse{.status = status, .body = "{\"error\":" + json_quote(message) + "}"};
 }
 
-// Escribe un registro semilla en el motor.
+// Writes a seed record into the engine.
 void seed_row(storage::StorageEngine& engine, std::int64_t key, std::string_view name) {
   const auto payload = seed_payload(key, name);
   const storage::Tuple tuple{std::vector<storage::Field>{
@@ -59,7 +59,7 @@ auto make_engine(int degree) -> std::unique_ptr<storage::StorageEngine> {
     std::int64_t key;
     std::string_view name;
   };
-  // La API es la fuente de verdad; el mock web replica estos seeds como fallback.
+  // The API is the source of truth; the web mock replicates these seeds as a fallback.
   const std::vector<SeedRow> rows = {
       {.key = 10, .name = "Ada Lovelace"},    {.key = 20, .name = "Alan Turing"},
       {.key = 5, .name = "Grace Hopper"},     {.key = 15, .name = "Linus Torvalds"},
@@ -107,7 +107,7 @@ auto change_degree(std::unique_ptr<storage::StorageEngine>& engine, int& current
   if (!requested.has_value() || *requested < minimum_engine_degree ||
       *requested > maximum_engine_degree) {
     return error_response(http_bad_request,
-                          std::format("grado invalido: usa un entero entre {} y {}",
+                          std::format("invalid degree: use an integer between {} and {}",
                                       minimum_engine_degree, maximum_engine_degree));
   }
   try {
@@ -123,11 +123,11 @@ auto insert_response(storage::StorageEngine& engine, std::string_view body) -> A
   const auto key = body_int(body, "key");
   const auto payload = body_string(body, "payload");
   if (!key.has_value() || !payload.has_value()) {
-    return error_response(http_bad_request, "cuerpo invalido: faltan key/payload");
+    return error_response(http_bad_request, "invalid body: missing key/payload");
   }
   try {
     if (engine.btree().search(*key).has_value()) {
-      return error_response(http_conflict, "clave duplicada");
+      return error_response(http_conflict, "duplicate key");
     }
     const storage::Tuple tuple{std::vector<storage::Field>{
         storage::Field{*key},
@@ -147,7 +147,7 @@ auto search_response(const storage::StorageEngine& engine, std::string_view key_
     -> ApiResponse {
   const auto key = parse_int(key_text);
   if (!key.has_value()) {
-    return error_response(http_bad_request, "parametro key invalido");
+    return error_response(http_bad_request, "invalid key parameter");
   }
   return ApiResponse{
       .status = http_ok,
@@ -158,11 +158,11 @@ auto page_response(const storage::StorageEngine& engine, std::string_view page_t
     -> ApiResponse {
   const auto page_number = parse_int(page_text);
   if (!page_number.has_value() || *page_number < 1) {
-    return error_response(http_bad_request, "identificador de pagina invalido");
+    return error_response(http_bad_request, "invalid page id");
   }
   const auto identifier = static_cast<storage::PageID>(*page_number - 1);
   if (identifier >= engine.records().page_count()) {
-    return error_response(http_not_found, "pagina inexistente");
+    return error_response(http_not_found, "page does not exist");
   }
   return ApiResponse{.status = http_ok, .body = page_to_json(engine.records(), identifier)};
 }

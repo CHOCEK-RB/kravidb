@@ -30,19 +30,19 @@
     onFocusPage,
   }: Props = $props()
 
-  // Lienzo físico de la losa (px). Metáfora gráfica de slotted page de 4 KB.
+  // Physical slab canvas (px). Graphic metaphor of a 4 KB slotted page.
   const W = 500
   const H = 780
   const HEADER_H = 74
 
-  // Carril izquierdo: Directorio de ranuras (fijo, estable)
+  // Left lane: slot directory (fixed, stable)
   const SLOT_L = 16
   const SLOT_W = 148
   const SLOT_H = 26
   const SLOT_HEADER_H = 26
   const SLOTS_TOP = 86
 
-  // Carril derecho: Área de datos (espacio libre arriba, tuplas abajo)
+  // Right lane: data area (free space above, tuples below)
   const TUPLE_L = 188
   const TUPLE_W = 270
   const BASE = 20
@@ -51,12 +51,12 @@
 
   const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
 
-  // Identidad cromática de la losa: el tono identifica la página, mientras que
-  // menta (puntero), oro (clave promovida), rojo (saturación) siguen siendo
-  // colores semánticos fijos.
+  // Slab color identity: the hue identifies the page, while
+  // mint (pointer), gold (promoted key), red (saturation) stay
+  // fixed semantic colors.
   const PALETTE = [
     { c: '#ff7ebb', hi: '#ffd4e8', lo: '#9e3668' }, // sakura pink
-    { c: '#a78bfa', hi: '#ebd5ff', lo: '#603eb5' }, // lavanda mist
+    { c: '#a78bfa', hi: '#ebd5ff', lo: '#603eb5' }, // lavender mist
     { c: '#38bdf8', hi: '#bae6fd', lo: '#0369a1' }, // sky candy
     { c: '#fb923c', hi: '#fed7aa', lo: '#9a3412' }, // peach blossom
     { c: '#48e5c2', hi: '#c2ffef', lo: '#1b7a65' }, // mint candy
@@ -80,14 +80,14 @@
     top: number
   }
 
-  // Altura máxima reservada para la pila de tuplas (garantiza espacio libre arriba)
+  // Maximum height reserved for the tuple stack (guarantees free space above)
   const MAX_TUPLE_STACK_H = H - SLOTS_TOP - BASE - 48
 
   const rows = $derived.by<Row[]>(() => {
     const count = page.slots.length
     if (count === 0) return []
 
-    // 1. Alturas deseadas sin escalar
+    // 1. Desired heights, unscaled
     const rawItems = page.slots.map((slot, i) => {
       const tuple = page.tuples.find((t) => t.slot_id === slot.slot_id) ?? null
       const size = tuple?.size_bytes ?? 0
@@ -97,7 +97,7 @@
 
     const rawTotalH = rawItems.reduce((acc, it) => acc + it.vh, 0) + (count - 1) * GAP
 
-    // 2. Si la suma excede el espacio disponible, escalar suavemente
+    // 2. If the total exceeds the available space, scale down smoothly
     const scale = rawTotalH > MAX_TUPLE_STACK_H ? MAX_TUPLE_STACK_H / rawTotalH : 1
     const effGap = Math.max(5, Math.round(GAP * scale))
 
@@ -119,19 +119,19 @@
     })
   })
 
-  // La cima visual de las tuplas en el carril derecho se mide desde H.
+  // The visual top of the tuples in the right lane is measured from H.
   const highestTop = $derived(rows.length ? H - rows[rows.length - 1].top : H - 20)
   const cavityTop = SLOTS_TOP
-  // La cavidad libre vive exclusivamente sobre las tuplas y jamás se extiende hacia abajo sobre ellas
+  // Free space lives only above the tuples and never reaches down over them
   const cavityH = $derived(Math.max(0, highestTop - cavityTop - GAP))
 
-  // El puntero sólo vive en la losa enfocada: si no, las dos páginas
-  // resaltarían la misma ranura (mismo índice de slot en ambas).
+  // The pointer lives only in the focused slab: otherwise both pages
+  // would highlight the same slot (same slot index in both).
   const activeRow = $derived(
     focused ? (rows.find((r) => r.slotId === selectedSlotId) ?? null) : null,
   )
 
-  /** Tupla señalada por un hallazgo del Index Scan (RowID → losa física). */
+  /** Tuple pointed at by an Index Scan hit (RowID → physical slab). */
   const locatedRow = $derived(
     located && locatedSlotId !== null
       ? (rows.find((r) => r.slotId === locatedSlotId) ?? null)
@@ -163,7 +163,7 @@
   in:fly={{ x: -22, duration: 460, easing: cubicOut }}
   aria-label="Página física {page.page_id}"
 >
-  <!-- Cabecera grabada con métricas completas sin solapes -->
+  <!-- Header plate with full metrics, no overlaps -->
   <button
     type="button"
     class="plate"
@@ -190,7 +190,7 @@
     </div>
   </button>
 
-  <!-- Directorio de Ranuras (carril izquierdo fijo y estable) -->
+  <!-- Slot directory (fixed, stable left lane) -->
   <div class="slots-deck" style="left: {SLOT_L}px; top: {SLOTS_TOP}px; width: {SLOT_W}px">
     <header class="slots-head">
       <span class="slots-title">RANURAS</span>
@@ -220,7 +220,7 @@
     </div>
   </div>
 
-  <!-- Cavidad libre (carril derecho de datos, sobre las tuplas) -->
+  <!-- Free space (right data lane, above the tuples) -->
   {#if cavityH >= 46}
     <div
       class="cavity"
@@ -248,7 +248,7 @@
     </div>
   {/if}
 
-  <!-- Tuplas (carril derecho de datos, apiladas desde la base) -->
+  <!-- Tuples (right data lane, stacked from the base) -->
   <div class="tuples">
     {#each rows as row (row.slotId)}
       <button
@@ -271,7 +271,7 @@
     {/each}
   </div>
 
-  <!-- Marca de localización: RowID hallado por el Index Scan -->
+  <!-- Location mark: RowID found by the Index Scan -->
   {#if locatedRow}
     {#key locatedSlotId}
       <div
@@ -287,7 +287,7 @@
     {/key}
   {/if}
 
-  <!-- Haz puntero: ranura → tupla -->
+  <!-- Pointer beam: slot → tuple -->
   <svg class="beam-layer" viewBox="0 0 {W} {H}" aria-hidden="true">
     {#if beam}
       {#key activeRow?.slotId}
@@ -309,7 +309,7 @@
     {/if}
   </svg>
 
-  <!-- Sello de alerta de saturación / división -->
+  <!-- Saturation / split alert stamp -->
   {#if strained}
     <div class="stamp-alert" aria-hidden="true">
       <span class="stamp-pill">PÁGINA SATURADA</span>
@@ -317,7 +317,7 @@
     </div>
   {/if}
 
-  <!-- Medidor vertical de capacidad -->
+  <!-- Vertical capacity meter -->
   <div class="gauge" aria-hidden="true" title="Llenado: {fillPct}% de 4 KB">
     <span class="gauge-track"></span>
     <span class="gauge-fill" style="height: {fill * 100}%"></span>
@@ -393,7 +393,7 @@
     }
   }
 
-  /* Cabecera grabada */
+  /* Header plate */
   .plate {
     position: absolute;
     inset: 0 0 auto 0;
@@ -469,7 +469,7 @@
     text-align: right;
   }
 
-  /* Directorio de Ranuras (carril izquierdo fijo y ordenado) */
+  /* Slot directory (fixed, ordered left lane) */
   .slots-deck {
     position: absolute;
     display: flex;
@@ -567,7 +567,7 @@
     opacity: 0.85;
   }
 
-  /* Cavidad libre (carril derecho, sobre las tuplas) */
+  /* Free space (right lane, above the tuples) */
   .cavity {
     position: absolute;
     z-index: 1;
@@ -632,7 +632,7 @@
     letter-spacing: 0.12em;
   }
 
-  /* Tuplas */
+  /* Tuples */
   .tuples {
     position: absolute;
     inset: 0;
@@ -724,7 +724,7 @@
     color: var(--ink-mute);
   }
 
-  /* Haz puntero */
+  /* Pointer beam */
   .beam-layer {
     position: absolute;
     inset: 0;
@@ -768,7 +768,7 @@
     }
   }
 
-  /* Sello de saturación / SPLIT */
+  /* Saturation / SPLIT stamp */
   .stamp-alert {
     position: absolute;
     top: 92px;
@@ -824,7 +824,7 @@
     }
   }
 
-  /* Medidor de capacidad vertical */
+  /* Vertical capacity meter */
   .gauge {
     position: absolute;
     top: 86px;

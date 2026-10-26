@@ -178,7 +178,7 @@ xmake test
 
 ### Benchmarks (Index Scan vs Full Table Scan)
 
-El arnés comparativo en [`benchmarks/benchmark.cpp`](file:///home/chocek/Codes/eda/TIF/kravidb/benchmarks/benchmark.cpp) evalúa el rendimiento sobre conjuntos sintéticos de datos ($N = 10^3 \dots 10^6$ registros):
+El arnés comparativo en [`benchmarks/benchmark.cpp`](benchmarks/benchmark.cpp) evalúa el rendimiento sobre conjuntos sintéticos de datos ($N = 10^3 \dots 10^6$ registros):
 
 ```bash
 # Reconfigurar en modo release (sin sanitizers que distorsionen la latencia)
@@ -204,7 +204,6 @@ kravidb/
 ├── benchmarks/               # Arnés de rendimiento Google Benchmark
 │   └── benchmark.cpp         # Comparativa Index Scan vs Full Table Scan
 ├── docs/
-│   ├── adr/                  # Decisiones de arquitectura
 │   └── md/                   # Documentación generada con `xmake docs` (ignorada)
 ├── src/
 │   ├── kravidb.cppm          # Preludio público exportador del motor

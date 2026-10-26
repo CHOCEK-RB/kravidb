@@ -1,5 +1,5 @@
 /// \file
-/// \brief Contrato `RecordStore` y estadisticas logicas de E/S de paginas.
+/// \brief `RecordStore` contract and logical page I/O statistics.
 
 export module storage.record_store;
 
@@ -8,79 +8,79 @@ export import storage.row_id;
 
 export namespace kravidb::storage {
 
-/// \brief Contadores logicos de E/S de paginas del almacen.
+/// \brief Logical page I/O counters of the store.
 ///
-/// Solo se incrementan en las operaciones tratadas como E/S real (`insert` y
-/// `read`). Las lecturas por `slot_at` no los modifican, de modo que un recorrido
-/// secuencial completo puede no contabilizar lecturas.
+/// They are only incremented by operations treated as real I/O (`insert` and
+/// `read`). Reads through `slot_at` do not modify them, so a full sequential
+/// scan may not account any reads.
 struct PageIOStats {
-  /// \brief Numero de lecturas de pagina acumuladas.
+  /// \brief Number of accumulated page reads.
   std::size_t page_reads{0};
 
-  /// \brief Numero de escrituras de pagina acumuladas.
+  /// \brief Number of accumulated page writes.
   std::size_t page_writes{0};
 };
 
-/// \brief Contrato abstracto de un almacen de registros paginado.
+/// \brief Abstract contract of a paged record store.
 ///
-/// Un registro es una secuencia opaca de bytes a la que el almacen asigna un
-/// `RowID` estable. La misma coleccion de bytes se puede recuperar tanto por ese
-/// identificador (`read`) como por su ubicacion explicita de pagina y ranura
-/// (`slot_at`). La clase no es copiable ni movible: se consume por referencia a
-/// traves de la interfaz.
+/// A record is an opaque byte sequence to which the store assigns a stable
+/// `RowID`. The same byte collection can be retrieved both by that identifier
+/// (`read`) and by its explicit page and slot location (`slot_at`). The class is
+/// neither copyable nor movable: it is consumed by reference through the
+/// interface.
 class RecordStore {
   public:
-  /// \brief Construye el contrato, sin estado propio.
+  /// \brief Builds the contract, with no state of its own.
   RecordStore() = default;
 
-  /// \brief Copia deshabilitada: el contrato se usa por referencia.
+  /// \brief Copy disabled: the contract is used by reference.
   RecordStore(const RecordStore&) = delete;
 
-  /// \brief Asignacion por copia deshabilitada.
+  /// \brief Copy assignment disabled.
   auto operator=(const RecordStore&) -> RecordStore& = delete;
 
-  /// \brief Movimiento deshabilitado.
+  /// \brief Move disabled.
   RecordStore(RecordStore&&) = delete;
 
-  /// \brief Asignacion por movimiento deshabilitada.
+  /// \brief Move assignment disabled.
   auto operator=(RecordStore&&) -> RecordStore& = delete;
 
-  /// \brief Destructor virtual.
+  /// \brief Virtual destructor.
   virtual ~RecordStore() = default;
 
-  /// \brief Inserta un registro y devuelve su localizador.
-  /// \param record Bytes del registro a almacenar.
-  /// \return El `RowID` asignado al registro.
+  /// \brief Inserts a record and returns its locator.
+  /// \param record Bytes of the record to store.
+  /// \return The `RowID` assigned to the record.
   [[nodiscard]] virtual auto insert(std::span<const std::byte> record) -> RowID = 0;
 
-  /// \brief Lee un registro por su localizador, contabilizando la E/S.
-  /// \param row_id Localizador devuelto previamente por `insert`.
-  /// \return Los bytes del registro, o `std::nullopt` si el identificador no existe.
+  /// \brief Reads a record by its locator, accounting the I/O.
+  /// \param row_id Locator previously returned by `insert`.
+  /// \return The record bytes, or `std::nullopt` if the identifier does not exist.
   [[nodiscard]] virtual auto read(RowID row_id) const
       -> std::optional<std::span<const std::byte>> = 0;
 
-  /// \brief Lee un registro por su ubicacion explicita, sin contabilizar E/S.
-  /// \param page_id Pagina objetivo.
-  /// \param slot_id Ranura dentro de la pagina.
-  /// \return Los bytes del registro, o `std::nullopt` si la ubicacion no existe.
+  /// \brief Reads a record by its explicit location, without accounting I/O.
+  /// \param page_id Target page.
+  /// \param slot_id Slot within the page.
+  /// \return The record bytes, or `std::nullopt` if the location does not exist.
   [[nodiscard]] virtual auto slot_at(PageID page_id, SlotID slot_id) const noexcept
       -> std::optional<std::span<const std::byte>> = 0;
 
-  /// \brief Numero de paginas que componen el almacen.
+  /// \brief Number of pages that make up the store.
   [[nodiscard]] virtual auto page_count() const noexcept -> std::size_t = 0;
 
-  /// \brief Numero de ranuras ocupadas en una pagina.
-  /// \param page_id Pagina consultada.
-  /// \return La cantidad de ranuras, o cero si la pagina no existe.
+  /// \brief Number of occupied slots in a page.
+  /// \param page_id Page being queried.
+  /// \return The number of slots, or zero if the page does not exist.
   [[nodiscard]] virtual auto slot_count(PageID page_id) const noexcept -> std::size_t = 0;
 
-  /// \brief Tamano configurado de pagina, en bytes.
+  /// \brief Configured page size, in bytes.
   [[nodiscard]] virtual auto page_size() const noexcept -> std::size_t = 0;
 
-  /// \brief Estadisticas acumuladas de E/S.
+  /// \brief Accumulated I/O statistics.
   [[nodiscard]] virtual auto stats() const noexcept -> const PageIOStats& = 0;
 
-  /// \brief Pone a cero las estadisticas de E/S.
+  /// \brief Resets the I/O statistics to zero.
   virtual void reset_stats() noexcept = 0;
 };
 

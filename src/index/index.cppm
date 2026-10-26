@@ -1,5 +1,5 @@
 /// \file
-/// \brief Contrato `Index` y estadisticas de busqueda.
+/// \brief `Index` contract and search statistics.
 
 export module index.index;
 
@@ -8,77 +8,77 @@ export import index.btree_node;
 
 export namespace kravidb::index {
 
-/// \brief Contadores de la ultima busqueda realizada en un indice.
+/// \brief Counters of the last search performed on an index.
 struct SearchStats {
-  /// \brief Nodos del indice visitados durante la busqueda.
+  /// \brief Index nodes visited during the search.
   std::size_t node_accesses{0};
 
-  /// \brief Comparaciones de clave realizadas durante la busqueda.
+  /// \brief Key comparisons performed during the search.
   std::size_t key_comparisons{0};
 };
 
-/// \brief Rastro estructural de una insercion.
+/// \brief Structural trace of an insertion.
 struct InsertStats {
-  /// \brief Indica si la insercion provoco al menos una division de nodo.
+  /// \brief Indicates whether the insertion caused at least one node split.
   bool split_occurred{false};
 
-  /// \brief Ultima clave promovida al padre, si hubo division.
+  /// \brief Last key promoted to the parent, if a split occurred.
   std::optional<Key> promoted_key;
 
-  /// \brief Indica si la raiz cambio porque el arbol crecio en altura.
+  /// \brief Indicates whether the root changed because the tree grew in height.
   bool new_root_created{false};
 };
 
-/// \brief Contrato abstracto de un indice que asocia clave con `RowID`.
+/// \brief Abstract contract of an index that associates a key with a `RowID`.
 ///
-/// Relaciona claves enteras de 64 bits con localizadores de registro. No es
-/// copiable ni movible: se consume por referencia a traves de la interfaz.
+/// It relates 64-bit integer keys to record locators. It is neither copyable
+/// nor movable: it is consumed by reference through the interface.
 class Index {
   public:
-  /// \brief Construye el contrato, sin estado propio.
+  /// \brief Constructs the contract, with no state of its own.
   Index() = default;
 
-  /// \brief Copia deshabilitada: el contrato se usa por referencia.
+  /// \brief Copy disabled: the contract is used by reference.
   Index(const Index&) = delete;
 
-  /// \brief Asignacion por copia deshabilitada.
+  /// \brief Copy assignment disabled.
   auto operator=(const Index&) -> Index& = delete;
 
-  /// \brief Movimiento deshabilitado.
+  /// \brief Move disabled.
   Index(Index&&) = delete;
 
-  /// \brief Asignacion por movimiento deshabilitada.
+  /// \brief Move assignment disabled.
   auto operator=(Index&&) -> Index& = delete;
 
-  /// \brief Destructor virtual.
+  /// \brief Virtual destructor.
   virtual ~Index() = default;
 
-  /// \brief Inserta una asociacion entre clave y `RowID`.
+  /// \brief Inserts an association between a key and a `RowID`.
   ///
-  /// El indice no impone unicidad: puede almacenar varias entradas con la misma
-  /// clave. La unicidad de la clave primaria es una regla de `Table`.
-  /// \param key Clave a indexar.
-  /// \param row_id Localizador de registro asociado.
+  /// The index does not enforce uniqueness: it may store several entries with
+  /// the same key. Primary key uniqueness is a rule of `Table`.
+  /// \param key Key to index.
+  /// \param row_id Associated record locator.
   virtual void insert(Key key, RowID row_id) = 0;
 
-  /// \brief Estadisticas de la ultima insercion realizada.
+  /// \brief Statistics of the last insertion performed.
   [[nodiscard]] virtual auto last_insert_stats() const noexcept -> InsertStats = 0;
 
-  /// \brief Busca una clave en el indice.
-  /// \param key Clave buscada.
-  /// \return El `RowID` asociado, o `std::nullopt` si la clave no existe.
+  /// \brief Searches for a key in the index.
+  /// \param key Key to search for.
+  /// \return The associated `RowID`, or `std::nullopt` if the key does not exist.
   [[nodiscard]] virtual auto search(Key key) const -> std::optional<RowID> = 0;
 
-  /// \brief Indica si el indice no contiene ninguna entrada.
+  /// \brief Indicates whether the index contains no entries.
   [[nodiscard]] virtual auto empty() const noexcept -> bool = 0;
 
-  /// \brief Elimina todas las entradas del indice.
+  /// \brief Removes all entries from the index.
   virtual void clear() = 0;
 
-  /// \brief Estadisticas de la ultima busqueda realizada.
+  /// \brief Statistics of the last search performed.
   [[nodiscard]] virtual auto last_search_stats() const noexcept -> SearchStats = 0;
 
-  /// \brief Pone a cero las estadisticas de busqueda.
+  /// \brief Resets the search statistics to zero.
   virtual void reset_search_stats() noexcept = 0;
 };
 

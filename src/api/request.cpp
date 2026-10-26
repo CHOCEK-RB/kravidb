@@ -17,12 +17,12 @@ constexpr std::uint32_t four_byte_shift = 18U;
 constexpr std::uint32_t surrogate_shift = 10U;
 constexpr std::size_t false_length = 5;
 
-// Indica si `character` es un espacio en blanco JSON.
+// Tells whether `character` is JSON whitespace.
 auto is_whitespace(char character) -> bool {
   return character == ' ' || character == '\t' || character == '\n' || character == '\r';
 }
 
-// Avanza `position` sobre los espacios en blanco de `text`.
+// Advances `position` over the whitespace in `text`.
 auto skip_whitespace(std::string_view text, std::size_t position) -> std::size_t {
   while (position < text.size() && is_whitespace(text.at(position))) {
     ++position;
@@ -30,7 +30,7 @@ auto skip_whitespace(std::string_view text, std::size_t position) -> std::size_t
   return position;
 }
 
-// Devuelve el valor hexadecimal de un digito, si lo es.
+// Returns the hexadecimal value of a digit, when it is one.
 auto hex_value(char character) -> std::optional<std::uint32_t> {
   if (character >= '0' && character <= '9') {
     return static_cast<std::uint32_t>(character - '0');
@@ -44,7 +44,7 @@ auto hex_value(char character) -> std::optional<std::uint32_t> {
   return std::nullopt;
 }
 
-// Lee cuatro digitos hexadecimales a partir de `position`.
+// Reads four hexadecimal digits starting at `position`.
 auto read_hex4(std::string_view text, std::size_t position) -> std::optional<std::uint32_t> {
   constexpr std::size_t hex_digits = 4;
   if (position + hex_digits > text.size()) {
@@ -61,7 +61,7 @@ auto read_hex4(std::string_view text, std::size_t position) -> std::optional<std
   return value;
 }
 
-// Agrega `code_point` a `out` codificado en UTF-8.
+// Appends `code_point` to `out`, encoded as UTF-8.
 void append_utf8(std::string& out, std::uint32_t code_point) {
   constexpr std::uint32_t ascii_limit = 0x7FU;
   constexpr std::uint32_t two_byte_limit = 0x7FFU;
@@ -93,8 +93,8 @@ void append_utf8(std::string& out, std::uint32_t code_point) {
   out += static_cast<char>(continuation_prefix | (code_point & continuation_mask));
 }
 
-// Interpreta una cadena JSON que empieza en `position` y devuelve su valor y la
-// posicion siguiente a la comilla de cierre.
+// Parses a JSON string starting at `position` and returns its value and the
+// position after the closing quote.
 auto parse_string_at(std::string_view text, std::size_t position)
     -> std::optional<std::pair<std::string, std::size_t>> {
   constexpr char quote = '"';
@@ -189,7 +189,7 @@ auto parse_string_at(std::string_view text, std::size_t position)
   return std::nullopt;
 }
 
-// Avanza sobre un valor JSON completo y devuelve la posicion siguiente.
+// Skips over a complete JSON value and returns the next position.
 auto skip_value(std::string_view text, std::size_t position) -> std::optional<std::size_t> {
   if (position >= text.size()) {
     return std::nullopt;
@@ -323,7 +323,7 @@ auto parse_int(std::string_view text) -> std::optional<std::int64_t> {
   std::int64_t value = 0;
   const auto begin = std::next(text.begin(), static_cast<std::ptrdiff_t>(start));
   const auto result = std::from_chars(begin, text.end(), value);
-  // 0 = sin error. Se evita std::errc{} porque clang-tidy lo marca bajo libc++.
+  // 0 = no error. std::errc{} is avoided because clang-tidy flags it under libc++.
   if (static_cast<int>(result.ec) != 0 || result.ptr == begin) {
     return std::nullopt;
   }

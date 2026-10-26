@@ -10,10 +10,10 @@ using kravidb::index::BTreeNode;
 using kravidb::index::Key;
 using kravidb::index::RowID;
 
-// El grado minimo permitido: fuerza divisiones en hojas y nodos internos.
+// The minimum allowed degree: forces splits in leaves and internal nodes.
 constexpr int minimum_degree = 2;
 constexpr int medium_degree = 4;
-// El grado por defecto del motor: caso realista de baja altura.
+// The engine's default degree: realistic low-height case.
 constexpr int wide_degree = kravidb::index::recommended_degree;
 
 constexpr Key arbitrary_key = 42;
@@ -23,7 +23,7 @@ constexpr std::size_t ten_thousand = 10'000;
 constexpr std::size_t hundred_thousand = 100'000;
 constexpr std::uint64_t random_seed = 20261001ULL;
 
-// Recorre el arbol in-order y acumula las claves en `out`.
+// Walks the tree in-order and accumulates the keys in `out`.
 void collect_keys(const BTreeNode* node, std::vector<Key>& out) {
   if (node == nullptr) {
     return;
@@ -47,7 +47,7 @@ void collect_keys(const BTreeNode* node, std::vector<Key>& out) {
   return keys;
 }
 
-// Acumula los identificadores de nodo en orden de preorden.
+// Accumulates the node identifiers in preorder.
 void collect_node_ids(const BTreeNode* node, std::vector<std::size_t>& out) {
   if (node == nullptr) {
     return;
@@ -58,9 +58,9 @@ void collect_node_ids(const BTreeNode* node, std::vector<std::size_t>& out) {
   }
 }
 
-// Verifica de forma recursiva todas las invariantes estructurales del B-Tree.
+// Recursively verifies every structural invariant of the B-tree.
 void expect_invariants(const BTreeNode* node, int degree, bool is_root) {
-  ASSERT_NE(node, nullptr) << "nodo nulo alcanzado durante el recorrido";
+  ASSERT_NE(node, nullptr) << "null node reached during traversal";
 
   EXPECT_EQ(node->min_degree(), degree);
   EXPECT_TRUE(node->has_valid_shape());
@@ -84,8 +84,8 @@ void expect_invariants(const BTreeNode* node, int degree, bool is_root) {
   }
 }
 
-// Cota superior teorica de la altura para `count` claves y grado `degree`:
-// 2 * t^h - 1 es el minimo de claves en un arbol de altura h.
+// Theoretical height upper bound for `count` keys and degree `degree`:
+// 2 * t^h - 1 is the minimum number of keys in a tree of height h.
 // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 [[nodiscard]] auto height_upper_bound(std::size_t count, int degree) -> std::size_t {
   const auto degree_size = static_cast<std::size_t>(degree);
@@ -98,14 +98,14 @@ void expect_invariants(const BTreeNode* node, int degree, bool is_root) {
   return height;
 }
 
-// Inserta `count` claves en orden aleatorio (semilla fija), verifica invariantes,
-// que todas las claves son recuperables y que la altura respeta la cota teorica.
+// Inserts `count` keys in random order (fixed seed), verifies invariants,
+// that every key is retrievable and that the height respects the theoretical bound.
 void run_massive_insertion(std::size_t count, int degree) {
   BTree tree{degree};
 
   std::vector<Key> keys(count);
   std::ranges::iota(keys, Key{0});
-  // La semilla fija hace la prueba reproducible; el orden no necesita ser seguro.
+  // The fixed seed makes the test reproducible; the order need not be secure.
   // NOLINTNEXTLINE(bugprone-random-generator-seed, cert-msc32-c, cert-msc51-cpp)
   std::mt19937_64 generator{random_seed};
   std::ranges::shuffle(keys, generator);
@@ -127,7 +127,7 @@ void run_massive_insertion(std::size_t count, int degree) {
 
   for (const Key key : keys) {
     const auto found = tree.search(key);
-    ASSERT_TRUE(found.has_value()) << "clave no encontrada: " << key;
+    ASSERT_TRUE(found.has_value()) << "key not found: " << key;
     EXPECT_EQ(*found, static_cast<RowID>(key) + 1);
   }
 }
@@ -246,8 +246,8 @@ TEST(BTreeEdge, DuplicateKeysAreStoredStructurally) {
   EXPECT_EQ(ordered.size(), count);
   EXPECT_TRUE(std::ranges::all_of(ordered, [](Key key) { return key == arbitrary_key; }));
 
-  // El contrato permite duplicados en el indice; `Table` impone la unicidad de la PK.
-  // `search` puede devolver cualquiera de las entradas con la clave duplicada.
+  // The contract allows duplicates in the index; `Table` enforces PK uniqueness.
+  // `search` may return any of the entries with the duplicate key.
   const auto found = tree.search(arbitrary_key);
   ASSERT_TRUE(found.has_value());
   EXPECT_GE(*found, RowID{1});
@@ -269,7 +269,7 @@ TEST(BTreeStats, RecordsNodeAccessesAndComparisons) {
   EXPECT_GT(hit.stats.node_accesses, 0U);
   EXPECT_GT(hit.stats.key_comparisons, 0U);
 
-  // `search` usa el mismo algoritmo y debe exponer las mismas metricas.
+  // `search` uses the same algorithm and must expose the same metrics.
   tree.reset_search_stats();
   const auto via_search = tree.search(static_cast<Key>(count - 1));
   ASSERT_TRUE(via_search.has_value());
@@ -321,7 +321,7 @@ TEST(BTreeLifecycle, MoveTransfersOwnership) {
     EXPECT_TRUE(moved.search(static_cast<Key>(index)).has_value());
   }
 
-  // Se inspecciona a proposito el estado valido pero no especificado del origen.
+  // The source's valid but unspecified state is inspected on purpose.
   // NOLINTNEXTLINE(bugprone-use-after-move)
   EXPECT_TRUE(source.empty());
   EXPECT_EQ(source.root(), nullptr);

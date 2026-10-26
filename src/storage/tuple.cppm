@@ -1,5 +1,5 @@
 /// \file
-/// \brief Serializacion binaria de tuplas (`Tuple`).
+/// \brief Binary serialization of tuples (`Tuple`).
 
 export module storage.tuple;
 
@@ -7,21 +7,21 @@ import std;
 
 namespace kravidb::storage::detail {
 
-/// \brief Escribe un valor escalar en crudo al final de un buffer.
-/// \tparam T Tipo escalar a escribir.
-/// \param out Buffer de destino.
-/// \param value Valor a serializar (se copian sus bytes tal cual).
+/// \brief Writes a scalar value raw at the end of a buffer.
+/// \tparam T Scalar type to write.
+/// \param out Destination buffer.
+/// \param value Value to serialize (its bytes are copied as-is).
 template <typename T>
 void write_raw(std::vector<std::byte>& out, T value) {
   const auto raw = std::bit_cast<std::array<std::byte, sizeof(T)>>(value);
   out.insert(out.end(), raw.begin(), raw.end());
 }
 
-/// \brief Lee un valor escalar en crudo desde un buffer.
-/// \tparam T Tipo escalar a leer.
-/// \param buffer Bytes de origen.
-/// \param offset Desplazamiento de lectura; avanza en `sizeof(T)`.
-/// \return El valor leido, o `std::nullopt` si no quedan bytes suficientes.
+/// \brief Reads a scalar value raw from a buffer.
+/// \tparam T Scalar type to read.
+/// \param buffer Source bytes.
+/// \param offset Read offset; advances by `sizeof(T)`.
+/// \return The value read, or `std::nullopt` if there are not enough bytes left.
 template <typename T>
 [[nodiscard]] auto read_raw(std::span<const std::byte> buffer, std::size_t& offset)
     -> std::optional<T> {
@@ -38,39 +38,39 @@ template <typename T>
 
 export namespace kravidb::storage {
 
-/// \brief Tipo de un campo dentro de una tupla serializada.
+/// \brief Type of a field inside a serialized tuple.
 enum class FieldType : std::uint8_t {
-  /// \brief Entero de 64 bits con signo.
+  /// \brief Signed 64-bit integer.
   Int = 0,
 
-  /// \brief Cadena de longitud variable (prefijo `u32` de longitud mas bytes).
+  /// \brief Variable-length string (`u32` length prefix plus bytes).
   Varchar = 1,
 };
 
-/// \brief Valor de un campo: entero de 64 bits o cadena.
+/// \brief Value of a field: 64-bit integer or string.
 using Field = std::variant<std::int64_t, std::string>;
 
-/// \brief Coleccion ordenada de campos con serializacion binaria propia.
+/// \brief Ordered collection of fields with its own binary serialization.
 ///
-/// El formato serializado es un `u32` con el numero de campos, seguido de cada
-/// campo como un `u8` de tipo mas su carga: `Int` ocupa 8 bytes y `Varchar` un
-/// `u32` de longitud seguido de los bytes de la cadena.
+/// The serialized format is a `u32` with the field count, followed by each
+/// field as a `u8` type plus its payload: `Int` occupies 8 bytes and `Varchar`
+/// a `u32` length followed by the string bytes.
 class Tuple {
   public:
-  /// \brief Construye una tupla vacia.
+  /// \brief Builds an empty tuple.
   Tuple() = default;
 
-  /// \brief Construye una tupla a partir de sus campos.
-  /// \param fields Campos en orden.
+  /// \brief Builds a tuple from its fields.
+  /// \param fields Fields in order.
   explicit Tuple(std::vector<Field> fields) : fields_{std::move(fields)} {}
 
-  /// \brief Numero de campos de la tupla.
+  /// \brief Number of fields in the tuple.
   [[nodiscard]] auto field_count() const noexcept -> std::size_t { return fields_.size(); }
 
-  /// \brief Acceso de solo lectura a los campos, en orden.
+  /// \brief Read-only access to the fields, in order.
   [[nodiscard]] auto fields() const noexcept -> const std::vector<Field>& { return fields_; }
 
-  /// \brief Tamano en bytes de la representacion serializada.
+  /// \brief Size in bytes of the serialized representation.
   [[nodiscard]] auto serialized_size() const noexcept -> std::size_t {
     std::size_t total = sizeof(std::uint32_t);
     for (const auto& field : fields_) {
@@ -84,8 +84,8 @@ class Tuple {
     return total;
   }
 
-  /// \brief Serializa la tupla a su representacion binaria.
-  /// \return Los bytes en el formato descrito en la documentacion de la clase.
+  /// \brief Serializes the tuple to its binary representation.
+  /// \return The bytes in the format described in the class documentation.
   [[nodiscard]] auto serialize() const -> std::vector<std::byte> {
     std::vector<std::byte> out;
     out.reserve(serialized_size());
@@ -105,9 +105,9 @@ class Tuple {
     return out;
   }
 
-  /// \brief Reconstruye una tupla desde su representacion binaria.
-  /// \param buffer Bytes previamente producidos por `serialize`.
-  /// \return La tupla rehidratada, o `std::nullopt` si el buffer esta truncado o malformado.
+  /// \brief Rebuilds a tuple from its binary representation.
+  /// \param buffer Bytes previously produced by `serialize`.
+  /// \return The rehydrated tuple, or `std::nullopt` if the buffer is truncated or malformed.
   [[nodiscard]] static auto deserialize(std::span<const std::byte> buffer) -> std::optional<Tuple> {
     std::size_t offset = 0;
     const auto count = detail::read_raw<std::uint32_t>(buffer, offset);
@@ -146,11 +146,11 @@ class Tuple {
     return Tuple{std::move(fields)};
   }
 
-  /// \brief Compara dos tuplas campo a campo.
+  /// \brief Compares two tuples field by field.
   [[nodiscard]] auto operator==(const Tuple&) const -> bool = default;
 
   private:
-  /// \brief Campos de la tupla, en orden.
+  /// \brief Fields of the tuple, in order.
   std::vector<Field> fields_;
 };
 

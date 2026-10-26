@@ -23,7 +23,7 @@ using kravidb::storage::StorageEngine;
 using kravidb::storage::Table;
 using kravidb::storage::Tuple;
 
-// Pagina diminuta para forzar el salto a una pagina nueva con pocos registros.
+// Tiny page to force a jump to a new page with few records.
 constexpr std::size_t tiny_page = 64;
 
 [[nodiscard]] auto bytes_of(std::string_view text) -> std::vector<std::byte> {
@@ -38,7 +38,7 @@ constexpr std::size_t tiny_page = 64;
 [[nodiscard]] auto key_of(const Tuple& tuple) -> Key {
   const auto* key = std::get_if<std::int64_t>(&tuple.fields().front());
   if (key == nullptr) {
-    throw std::invalid_argument{"la tupla no tiene una PK entera"};
+    throw std::invalid_argument{"tuple does not have an integer PK"};
   }
   return *key;
 }
@@ -72,7 +72,7 @@ TEST(RowId, HandlesExtremeValues) {
 // ---------------------------------------------------------------------------
 
 TEST(Tuple, RoundTripsIntAndVarchar) {
-  const Tuple tuple{std::vector<Field>{std::int64_t{-1}, std::string{"hola"}}};
+  const Tuple tuple{std::vector<Field>{std::int64_t{-1}, std::string{"hello"}}};
   const auto buffer = tuple.serialize();
 
   EXPECT_EQ(buffer.size(), tuple.serialized_size());
@@ -122,7 +122,7 @@ TEST(Tuple, DeserializeRejectsEveryTruncation) {
 
   for (std::size_t length = 0; length < buffer.size(); ++length) {
     const auto truncated = Tuple::deserialize(std::span<const std::byte>(buffer).first(length));
-    EXPECT_FALSE(truncated.has_value()) << "longitud truncada: " << length;
+    EXPECT_FALSE(truncated.has_value()) << "truncated length: " << length;
   }
 }
 
@@ -166,7 +166,7 @@ TEST(PageManager, RejectsPageSizeThatOverflowsSlotEntry) {
 
 TEST(PageManager, InsertAndReadRoundTrip) {
   PageManager store{tiny_page};
-  const auto payload = bytes_of("registro");
+  const auto payload = bytes_of("record");
 
   const RowID row = store.insert(payload);
   const RowLocation location = decode_row_id(row);
@@ -255,7 +255,7 @@ TEST(PageManager, TracksWritesAndReads) {
   PageManager store{tiny_page};
   EXPECT_EQ(store.stats().page_writes, 0U);
 
-  const RowID row = store.insert(bytes_of("dato"));
+  const RowID row = store.insert(bytes_of("data"));
   EXPECT_EQ(store.stats().page_writes, 1U);
 
   (void)store.read(row);
@@ -268,8 +268,8 @@ TEST(PageManager, TracksWritesAndReads) {
 
 TEST(PageManager, ContiguousBufferSlottedLayout) {
   PageManager store{tiny_page};
-  const auto payload1 = bytes_of("primero");
-  const auto payload2 = bytes_of("segundo");
+  const auto payload1 = bytes_of("first");
+  const auto payload2 = bytes_of("second");
 
   const RowID row1 = store.insert(payload1);
   const RowID row2 = store.insert(payload2);
@@ -279,8 +279,8 @@ TEST(PageManager, ContiguousBufferSlottedLayout) {
   ASSERT_TRUE(read1.has_value());
   ASSERT_TRUE(read2.has_value());
 
-  // Las tuplas crecen hacia atras desde el final del buffer contiguo:
-  // el primer registro esta en una direccion de memoria superior al segundo.
+  // Tuples grow backwards from the end of the contiguous buffer:
+  // the first record sits at a higher memory address than the second.
   EXPECT_GT(read1->data(), read2->data());
   EXPECT_TRUE(std::ranges::equal(*read1, payload1));
   EXPECT_TRUE(std::ranges::equal(*read2, payload2));
@@ -295,7 +295,7 @@ TEST(Table, InsertThenFindByIndex) {
   BTree index{};
   Table table{records, index};
 
-  const Tuple tuple{std::vector<Field>{std::int64_t{1}, std::string{"uno"}}};
+  const Tuple tuple{std::vector<Field>{std::int64_t{1}, std::string{"one"}}};
   table.insert(tuple);
 
   const auto found = table.find_by_index(1);
@@ -317,7 +317,7 @@ TEST(Table, InsertRejectsNonIntPrimaryKey) {
   BTree index{};
   Table table{records, index};
 
-  const Tuple tuple{std::vector<Field>{std::string{"clave"}}};
+  const Tuple tuple{std::vector<Field>{std::string{"key"}}};
   EXPECT_THROW(table.insert(tuple), std::invalid_argument);
 }
 
@@ -329,7 +329,7 @@ TEST(Table, RejectsDuplicatePrimaryKey) {
   const Tuple original{std::vector<Field>{std::int64_t{7}, std::string{"original"}}};
   table.insert(original);
 
-  const Tuple duplicate{std::vector<Field>{std::int64_t{7}, std::string{"otro"}}};
+  const Tuple duplicate{std::vector<Field>{std::int64_t{7}, std::string{"other"}}};
   EXPECT_THROW(table.insert(duplicate), std::invalid_argument);
 
   EXPECT_EQ(table.scan_all().size(), 1U);
@@ -364,7 +364,7 @@ TEST(Table, ScanAllDoesNotCountPageReads) {
   PageManager records{};
   BTree index{};
   Table table{records, index};
-  table.insert(Tuple{std::vector<Field>{std::int64_t{1}, std::string{"uno"}}});
+  table.insert(Tuple{std::vector<Field>{std::int64_t{1}, std::string{"one"}}});
 
   records.reset_stats();
   (void)table.scan_all();
@@ -372,7 +372,7 @@ TEST(Table, ScanAllDoesNotCountPageReads) {
 }
 
 // ---------------------------------------------------------------------------
-// StorageEngine (integracion #9: index scan a traves de Table)
+// StorageEngine (integration #9: index scan through Table)
 // ---------------------------------------------------------------------------
 
 TEST(StorageEngine, EndToEndViaTableAndIndex) {
@@ -382,7 +382,7 @@ TEST(StorageEngine, EndToEndViaTableAndIndex) {
   for (std::size_t index = 0; index < count; ++index) {
     engine.table().insert(Tuple{std::vector<Field>{
         static_cast<std::int64_t>(index),
-        std::string{"fila"},
+        std::string{"row"},
     }});
   }
 
@@ -398,7 +398,7 @@ TEST(StorageEngine, EndToEndViaTableAndIndex) {
 
 TEST(StorageEngine, IndexResolvesToStoredRecord) {
   StorageEngine engine{};
-  const Tuple expected{std::vector<Field>{std::int64_t{1}, std::string{"uno"}}};
+  const Tuple expected{std::vector<Field>{std::int64_t{1}, std::string{"one"}}};
   engine.table().insert(expected);
 
   const auto row = engine.index().search(1);

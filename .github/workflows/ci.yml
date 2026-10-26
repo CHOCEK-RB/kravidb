@@ -84,7 +84,7 @@ jobs:
           xmake build kravidb_api
           port=18080
           KRAVIDB_DEGREE=4 KRAVIDB_BIND=127.0.0.1 \
-            ./build/linux/x86_64/debug/kravidb_api "$port" > /tmp/kravidb_api.log 2>&1 &
+            ./build/linux/x86_64/debug/kravidb_api "$port" > build/kravidb_api.log 2>&1 &
           api_pid=$!
           trap 'kill "$api_pid" 2>/dev/null || true; wait "$api_pid" 2>/dev/null || true' EXIT
 
@@ -97,7 +97,7 @@ jobs:
             sleep 0.1
           done
           if [ "$ready" -ne 1 ]; then
-            cat /tmp/kravidb_api.log
+            cat build/kravidb_api.log
             exit 1
           fi
 
@@ -109,20 +109,20 @@ jobs:
           echo "insert: $insert"
           curl -fsS "http://127.0.0.1:$port/api/v1/btree/search?key=42" | grep -q '"found":true'
 
-          duplicate=$(curl -sS -o /tmp/duplicate.json -w '%{http_code}' -X POST \
+          duplicate=$(curl -sS -o build/duplicate.json -w '%{http_code}' -X POST \
             "http://127.0.0.1:$port/api/v1/btree/insert" -d '{"key":42,"payload":"otro"}')
           test "$duplicate" = "409"
 
-          malformed=$(curl -sS -o /tmp/malformed.json -w '%{http_code}' -X POST \
+          malformed=$(curl -sS -o build/malformed.json -w '%{http_code}' -X POST \
             "http://127.0.0.1:$port/api/v1/btree/insert" -d '{"key":12abc,"payload":"x"}')
           test "$malformed" = "400"
 
-          nested=$(curl -sS -o /tmp/nested.json -w '%{http_code}' -X POST \
+          nested=$(curl -sS -o build/nested.json -w '%{http_code}' -X POST \
             "http://127.0.0.1:$port/api/v1/btree/insert" -d '{"payload":"\"key\":99"}')
           test "$nested" = "400"
 
           curl -fsS "http://127.0.0.1:$port/api/v1/page/1" | grep -q '"page_id":1'
-          missing_page=$(curl -sS -o /tmp/missing_page.json -w '%{http_code}' \
+          missing_page=$(curl -sS -o build/missing_page.json -w '%{http_code}' \
             "http://127.0.0.1:$port/api/v1/page/999")
           test "$missing_page" = "404"
 

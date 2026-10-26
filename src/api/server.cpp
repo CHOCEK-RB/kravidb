@@ -9,14 +9,14 @@ import api.handlers;
 
 namespace {
 
-// Candidatos para el directorio de build del frontend segun el directorio de trabajo.
+// Candidates for the frontend build directory depending on the working directory.
 inline constexpr std::array<std::string_view, 3> web_root_candidates = {
     "web/dist",
     "../../../../web/dist",
     "dist",
 };
 
-// Resuelve la ubicacion real de los archivos estaticos si alguna de las rutas existe.
+// Resolves the real location of the static files when any of the paths exists.
 auto resolve_web_root() -> std::optional<std::string> {
   for (const auto candidate : web_root_candidates) {
     if (std::filesystem::is_directory(candidate)) {
@@ -26,24 +26,24 @@ auto resolve_web_root() -> std::optional<std::string> {
   return std::nullopt;
 }
 
-// Escribe una traza del servidor en stdout. Un mutex evita que las lineas de
-// los hilos del servidor se entremezclen (std::osyncstream no existe en
-// libc++, que es la stdlib de CI) y se vacia el buffer para que las trazas
-// aparezcan aunque la salida este redirigida.
+// Writes a server log line to stdout. A mutex keeps lines from the server
+// threads from interleaving (std::osyncstream does not exist in libc++, which
+// is the CI stdlib) and the buffer is flushed so the lines appear even when
+// output is redirected.
 void log_line(std::string_view message) {
   static std::mutex log_mutex;
   const std::scoped_lock lock{log_mutex};
   std::cout << "[api] " << message << '\n' << std::flush;
 }
 
-// Acepta solo los origenes del servidor de desarrollo de Vite.
+// Accepts only origins from the Vite dev server.
 auto is_local_origin(std::string_view origin) -> bool {
   return origin == "http://localhost" || origin.starts_with("http://localhost:") ||
          origin == "http://127.0.0.1" || origin.starts_with("http://127.0.0.1:");
 }
 
-// Refleja el origen local en las respuestas CORS; el frontend compilado se sirve
-// desde el mismo origen y no necesita estas cabeceras.
+// Reflects the local origin in CORS responses; the built frontend is served
+// from the same origin and does not need these headers.
 void configure_cors(httplib::Server& server) {
   server.set_pre_routing_handler(
       [](const httplib::Request& request,
@@ -63,9 +63,9 @@ void configure_cors(httplib::Server& server) {
   });
 }
 
-// Impide que dos instancias compartan el puerto: cpp-httplib activa
-// SO_REUSEPORT por defecto, asi que un segundo proceso se reparte las
-// peticiones con el primero y cada uno escribe su log y su motor por separado.
+// Prevents two instances from sharing the port: cpp-httplib enables
+// SO_REUSEPORT by default, so a second process shares requests with the first
+// and each writes its own log and engine separately.
 void configure_socket_options(httplib::Server& server) {
   server.set_socket_options([](socket_t sock) -> void {
     static_cast<void>(httplib::set_socket_opt(sock, SOL_SOCKET, SO_REUSEADDR, 1));
@@ -75,7 +75,7 @@ void configure_socket_options(httplib::Server& server) {
   });
 }
 
-// Copia una respuesta logica de la API a la respuesta HTTP.
+// Copies a logical API response into the HTTP response.
 void write_response(httplib::Response& response, const kravidb::api::ApiResponse& result) {
   response.status = result.status;
   response.set_content(result.body, "application/json");
@@ -91,7 +91,7 @@ auto run_server(int port, int degree, std::string_view bind_address) -> int {
   configure_cors(server);
   configure_socket_options(server);
 
-  // Contador de peticiones atendidas, para confirmar que el cliente conecta.
+  // Counter of served requests, to confirm that the client connects.
   std::atomic<std::uint64_t> request_count{0};
   server.set_logger(
       [&request_count](const httplib::Request& request, const httplib::Response& response) -> void {
@@ -163,12 +163,13 @@ auto run_server(int port, int degree, std::string_view bind_address) -> int {
     server.set_mount_point("/", *web_dir);
   }
 
-  // Se reserva el puerto antes de anunciarlo: si ya hay otra instancia, cpp-httplib
-  // (con SO_REUSEPORT desactivado) falla aqui y el arranque se aborta con un aviso.
+  // The port is reserved before announcing it: if another instance is already
+  // there, cpp-httplib (with SO_REUSEPORT disabled) fails here and startup
+  // aborts with a warning.
   if (!server.bind_to_port(std::string{bind_address}, port)) {
     log_line(
-        std::format("no se pudo escuchar en {}:{}: probablemente ya hay otra instancia "
-                    "de kravidb_api corriendo (mata la anterior y reintenta)",
+        std::format("could not listen on {}:{}: another kravidb_api instance is probably "
+                    "already running (kill it and retry)",
                     bind_address, port));
     return 1;
   }

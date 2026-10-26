@@ -21,7 +21,7 @@ constexpr std::string_view sample_payload = "payload";
 constexpr std::string_view sample_value = "value";
 constexpr std::size_t first_page = 0;
 
-// Serializa e indexa una tupla {clave, carga util} para poblar el motor.
+// Serializes and indexes a {key, payload} tuple to populate the engine.
 void seed(StorageEngine& engine, Key key, std::string_view payload) {
   const Tuple tuple{std::vector<kravidb::storage::Field>{key, std::string{payload}}};
   engine.table().insert(tuple);
