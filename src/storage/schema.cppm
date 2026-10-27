@@ -100,6 +100,9 @@ class Schema {
       if (col.type == FieldType::Varchar && !std::holds_alternative<std::string>(field)) {
         return false;
       }
+      if (col.type == FieldType::Decimal && !std::holds_alternative<Decimal>(field)) {
+        return false;
+      }
     }
     return true;
   }
