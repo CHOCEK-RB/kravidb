@@ -219,13 +219,14 @@ kravidb/
 │   │   └── index.cppm        # Contrato abstracto Index
 │   └── storage/              # Módulo de almacenamiento paged & slotted
 │       ├── engine.{cpp,cppm} # Fachada StorageEngine unificadora
+│       ├── page.cppm         # Página física de 8 KiB: header, ItemId y checksum
 │       ├── page_manager.*    # Buffer contiguo de páginas de 4KB y ranuras
 │       ├── record_store.cppm # Contrato abstracto RecordStore
 │       ├── row_id.cppm       # Empaquetado uint64 de PageID y SlotID
 │       ├── schema.cppm       # Definición de columnas y catálogo de tipos
 │       ├── table.{cpp,cppm}  # Abstracción de tabla con validación de tuplas
 │       └── tuple.cppm        # Serializador binario INT y VARCHAR
-├── tests/                    # Suite de 85 pruebas unitarias con GoogleTest
+├── tests/                    # Suite de 91 pruebas unitarias con GoogleTest
 ├── web/                      # Visualizador interactivo en Svelte + Vite
 ├── .github/workflows/
 │   └── ci.yml                # Pipeline de integración continua
