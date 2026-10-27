@@ -45,10 +45,28 @@ enum class FieldType : std::uint8_t {
 
   /// \brief Variable-length string (`u32` length prefix plus bytes).
   Varchar = 1,
+
+  /// \brief Fixed-point decimal (`u8` scale plus `i64` unscaled value).
+  Decimal = 2,
 };
 
-/// \brief Value of a field: 64-bit integer or string.
-using Field = std::variant<std::int64_t, std::string>;
+/// \brief Exact fixed-point value: `unscaled / 10^scale`.
+struct Decimal {
+  /// \brief Number of decimal digits after the point.
+  std::uint8_t scale{0};
+
+  /// \brief Value without the decimal point.
+  std::int64_t unscaled{0};
+
+  /// \brief Compares two decimal values field by field.
+  [[nodiscard]] auto operator==(const Decimal&) const -> bool = default;
+};
+
+/// \brief Largest supported decimal scale (`DECIMAL(p,s)` with `p <= 18`).
+inline constexpr std::uint8_t decimal_max_scale{18};
+
+/// \brief Value of a field: 64-bit integer, string, or decimal.
+using Field = std::variant<std::int64_t, std::string, Decimal>;
 
 /// \brief Ordered collection of fields with its own binary serialization.
 ///
@@ -77,6 +95,8 @@ class Tuple {
       total += sizeof(std::uint8_t);
       if (const auto* text = std::get_if<std::string>(&field)) {
         total += sizeof(std::uint32_t) + text->size();
+      } else if (std::holds_alternative<Decimal>(field)) {
+        total += sizeof(std::uint8_t) + sizeof(std::int64_t);
       } else {
         total += sizeof(std::int64_t);
       }
@@ -97,6 +117,10 @@ class Tuple {
         for (const char character : *text) {
           out.push_back(static_cast<std::byte>(character));
         }
+      } else if (const auto* decimal = std::get_if<Decimal>(&field)) {
+        detail::write_raw(out, static_cast<std::uint8_t>(FieldType::Decimal));
+        detail::write_raw(out, decimal->scale);
+        detail::write_raw(out, decimal->unscaled);
       } else {
         detail::write_raw(out, static_cast<std::uint8_t>(FieldType::Int));
         detail::write_raw(out, std::get<std::int64_t>(field));
@@ -139,6 +163,13 @@ class Tuple {
         }
         fields.emplace_back(std::move(text));
         offset += text_length;
+      } else if (*type == static_cast<std::uint8_t>(FieldType::Decimal)) {
+        const auto scale = detail::read_raw<std::uint8_t>(buffer, offset);
+        const auto unscaled = detail::read_raw<std::int64_t>(buffer, offset);
+        if (!scale || !unscaled || *scale > decimal_max_scale) {
+          return std::nullopt;
+        }
+        fields.emplace_back(Decimal{.scale = *scale, .unscaled = *unscaled});
       } else {
         return std::nullopt;
       }

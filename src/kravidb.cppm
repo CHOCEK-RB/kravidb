@@ -33,6 +33,9 @@ export import storage.relation_file;
 /// \brief 8 KiB page layout (`Page`, `PageHeader`, `ItemId`).
 export import storage.page;
 
+/// \brief Physical heap tuple (`HeapTuple`, `HeapTupleHeader`, `ItemPointerData`).
+export import storage.heap_tuple;
+
 /// \brief Page source contract and in-memory adapter (`PageSource`, `MemoryPageSource`).
 export import storage.page_source;
 
