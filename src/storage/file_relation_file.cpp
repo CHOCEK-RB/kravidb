@@ -355,6 +355,7 @@ class FileRelationFile::Impl {
         const auto suffix = std::string_view{filename}.substr(segment_prefix.size());
         // NOLINTNEXTLINE(bugprone-suspicious-stringview-data-usage)
         const auto [end, error] = std::from_chars(suffix.data(), suffix.end(), segment);
+        // NOLINTNEXTLINE(bugprone-invalid-enum-default-initialization)
         if (error != std::errc{} || end != suffix.end()) {
           continue;
         }
@@ -413,7 +414,7 @@ class FileRelationFile::Impl {
           throw std::filesystem::filesystem_error{"remove", path, error};
         }
       }
-      sizes_[fork] = 0;
+      sizes_.insert_or_assign(fork, 0);
       if (!segments.empty()) {
         detail::fsync_directory(base_directory_);
       }
@@ -448,7 +449,7 @@ class FileRelationFile::Impl {
         removed = true;
       }
     }
-    sizes_[fork] = blocks;
+    sizes_.insert_or_assign(fork, blocks);
     if (removed) {
       detail::fsync_directory(base_directory_);
     }
