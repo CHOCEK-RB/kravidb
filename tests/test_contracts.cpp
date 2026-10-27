@@ -51,6 +51,26 @@ TEST(MemoryPageSource, ReadsUnwrittenBlocksAsZeroes) {
   EXPECT_TRUE(std::ranges::all_of(page, [](std::byte value) { return value == std::byte{0}; }));
 }
 
+TEST(MemoryPageSource, ExtendsAndTruncatesLogicalSize) {
+  constexpr std::uint32_t written_block{5};
+  constexpr std::uint32_t extended_block{6};
+  constexpr std::uint32_t truncate_size{2};
+  MemoryPageSource source;
+  std::array<std::byte, physical_page_size> page{};
+  page.front() = first_marker;
+  source.write(Fork::main, written_block, page);
+
+  source.extend(Fork::main, 2);
+  source.read(Fork::main, written_block, page);
+  EXPECT_EQ(page.front(), first_marker);
+  source.read(Fork::main, extended_block, page);
+  EXPECT_TRUE(std::ranges::all_of(page, [](std::byte value) { return value == std::byte{0}; }));
+
+  source.truncate(Fork::main, truncate_size);
+  source.read(Fork::main, written_block, page);
+  EXPECT_TRUE(std::ranges::all_of(page, [](std::byte value) { return value == std::byte{0}; }));
+}
+
 TEST(NoopWal, HandsOutIncreasingLsnWithoutStoringRecords) {
   NoopWal wal;
   const LSN first = wal.insert(WalRecord{});
