@@ -5,14 +5,9 @@ export module storage.buffer_pool;
 
 import std;
 export import storage.relation_file;
+export import storage.page;
 
 export namespace kravidb::storage {
-
-/// \brief Physical page managed by the buffer pool.
-///
-/// The page layout belongs to the physical page module; the buffer pool only
-/// hands out references, so the type is forward-declared here.
-class Page;
 
 /// \brief Identifies a block of a relation inside the buffer pool.
 struct BufferTag {
