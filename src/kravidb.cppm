@@ -30,6 +30,9 @@ export import index.btree;
 /// \brief Relation file contract (`RelationFile`).
 export import storage.relation_file;
 
+/// \brief File-backed relation storage with segments (`FileRelationFile`).
+export import storage.file_relation_file;
+
 /// \brief 8 KiB page layout (`Page`, `PageHeader`, `ItemId`).
 export import storage.page;
 
