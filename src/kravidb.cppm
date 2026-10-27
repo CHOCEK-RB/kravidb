@@ -26,3 +26,24 @@ export import index.index;
 
 /// \brief B-tree implementation (`BTree`).
 export import index.btree;
+
+/// \brief Relation file contract (`RelationFile`).
+export import storage.relation_file;
+
+/// \brief Page source contract and in-memory adapter (`PageSource`, `MemoryPageSource`).
+export import storage.page_source;
+
+/// \brief Buffer pool contract (`BufferPool`, `PageGuard`, `BufferTag`).
+export import storage.buffer_pool;
+
+/// \brief WAL contract and no-op adapter (`Wal`, `NoopWal`).
+export import storage.wal;
+
+/// \brief Statement transaction contract (`TransactionManager`, `Transaction`).
+export import storage.transaction;
+
+/// \brief Catalog contract and in-memory adapter (`Catalog`, `SchemaCatalog`).
+export import storage.catalog;
+
+/// \brief In-memory index adapter (`MemoryBTree`).
+export import index.memory_btree;

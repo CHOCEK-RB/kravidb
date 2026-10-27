@@ -225,7 +225,7 @@ kravidb/
 │       ├── schema.cppm       # Definición de columnas y catálogo de tipos
 │       ├── table.{cpp,cppm}  # Abstracción de tabla con validación de tuplas
 │       └── tuple.cppm        # Serializador binario INT y VARCHAR
-├── tests/                    # Suite de 78 pruebas unitarias con GoogleTest
+├── tests/                    # Suite de 85 pruebas unitarias con GoogleTest
 ├── web/                      # Visualizador interactivo en Svelte + Vite
 ├── .github/workflows/
 │   └── ci.yml                # Pipeline de integración continua
