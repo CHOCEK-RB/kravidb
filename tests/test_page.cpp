@@ -11,6 +11,7 @@ using kravidb::storage::Page;
 using kravidb::storage::page_layout_version;
 using kravidb::storage::PageHeader;
 using kravidb::storage::pd_all_visible;
+using kravidb::storage::pd_has_free_lines;
 using kravidb::storage::pd_page_full;
 
 constexpr std::uint16_t sample_offset{0x1234};
@@ -25,6 +26,30 @@ constexpr std::uint32_t prune_xid{7};
 constexpr std::size_t header_size{24};
 constexpr std::size_t item_id_size{4};
 constexpr std::size_t page_size{8192};
+constexpr std::size_t lsn_offset{0};
+constexpr std::size_t checksum_offset{8};
+constexpr std::size_t flags_offset{10};
+constexpr std::size_t lower_offset{12};
+constexpr std::size_t upper_offset{14};
+constexpr std::size_t special_offset{16};
+constexpr std::size_t pagesize_version_offset{18};
+constexpr std::size_t prune_xid_offset{20};
+constexpr std::uint64_t header_lsn{0x1122334455667788};
+constexpr std::uint16_t header_checksum{0x1234};
+constexpr std::uint16_t header_flags{0xABCD};
+constexpr std::uint16_t header_lower{0x0024};
+constexpr std::uint16_t header_upper{0x1F00};
+constexpr std::uint16_t header_special{0x2000};
+constexpr std::uint16_t header_pagesize_version{0x2001};
+constexpr std::uint32_t header_prune_xid{0xDEADBEEF};
+constexpr std::uint16_t free_lines_flag{0x0002};
+
+template <typename T>
+auto read_at(std::span<const std::byte> bytes, std::size_t offset) -> T {
+  std::array<std::byte, sizeof(T)> raw{};
+  std::ranges::copy(bytes.subspan(offset, sizeof(T)), raw.begin());
+  return std::bit_cast<T>(raw);
+}
 
 TEST(Page, EmptyPagePassesValidation) {
   const Page page;
@@ -128,6 +153,45 @@ TEST(Page, ChecksumDetectsCorruption) {
 
   EXPECT_FALSE(page.verify_checksum());
   EXPECT_FALSE(page.validate());
+}
+
+TEST(Page, HeaderBytesMatchDocumentedOffsets) {
+  Page page;
+  auto header = page.header();
+  header.pd_lsn = header_lsn;
+  header.pd_checksum = header_checksum;
+  header.pd_flags = header_flags;
+  header.pd_lower = header_lower;
+  header.pd_upper = header_upper;
+  header.pd_special = header_special;
+  header.pd_pagesize_version = header_pagesize_version;
+  header.pd_prune_xid = header_prune_xid;
+  page.set_header(header);
+
+  const auto bytes = page.bytes();
+
+  EXPECT_EQ(read_at<std::uint64_t>(bytes, lsn_offset), header_lsn);
+  EXPECT_EQ(read_at<std::uint16_t>(bytes, checksum_offset), header_checksum);
+  EXPECT_EQ(read_at<std::uint16_t>(bytes, flags_offset), header_flags);
+  EXPECT_EQ(read_at<std::uint16_t>(bytes, lower_offset), header_lower);
+  EXPECT_EQ(read_at<std::uint16_t>(bytes, upper_offset), header_upper);
+  EXPECT_EQ(read_at<std::uint16_t>(bytes, special_offset), header_special);
+  EXPECT_EQ(read_at<std::uint16_t>(bytes, pagesize_version_offset), header_pagesize_version);
+  EXPECT_EQ(read_at<std::uint32_t>(bytes, prune_xid_offset), header_prune_xid);
+}
+
+TEST(Page, FreeLinesFlagRoundTrips) {
+  Page page;
+  auto header = page.header();
+  header.pd_flags = pd_has_free_lines;
+  page.set_header(header);
+  page.set_checksum();
+
+  const auto restored = Page::from_bytes(page.bytes());
+
+  EXPECT_EQ(pd_has_free_lines, free_lines_flag);
+  EXPECT_EQ(restored.header().pd_flags, pd_has_free_lines);
+  EXPECT_TRUE(restored.validate());
 }
 
 }  // namespace
