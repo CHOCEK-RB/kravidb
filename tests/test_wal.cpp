@@ -273,8 +273,10 @@ TEST(FileWal, DetectsCorruptedRecord) {
 
   const auto files = segment_files(directory.path());
   ASSERT_EQ(files.size(), 1U);
-  const auto offset = static_cast<std::streamoff>(
-      start + wal_record_header_size + wal_main_data_marker_size + corruption_offset_in_main_data);
+  const auto offset = static_cast<std::streamoff>(start) +
+                      static_cast<std::streamoff>(wal_record_header_size) +
+                      static_cast<std::streamoff>(wal_main_data_marker_size) +
+                      static_cast<std::streamoff>(corruption_offset_in_main_data);
   std::fstream stream{files.front(), std::ios::in | std::ios::out | std::ios::binary};
   ASSERT_TRUE(stream.is_open());
   stream.seekg(offset);
