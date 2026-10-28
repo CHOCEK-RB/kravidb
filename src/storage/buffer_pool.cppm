@@ -6,6 +6,8 @@ export module storage.buffer_pool;
 import std;
 export import storage.relation_file;
 export import storage.page;
+export import storage.page_source;
+export import storage.wal;
 
 export namespace kravidb::storage {
 
@@ -27,6 +29,7 @@ struct BufferStats {
   std::size_t writes{0};
   std::size_t fsyncs{0};
   std::size_t dirty_pages{0};
+  std::size_t pinned_pages{0};
 };
 
 /// \brief Pinned page with an explicit content lock.
@@ -68,11 +71,39 @@ class BufferPool {
   /// \brief Pins a zero-filled page for `tag`, ready to be written.
   [[nodiscard]] virtual auto new_page(BufferTag tag) -> std::unique_ptr<PageGuard> = 0;
 
+  /// \brief Writes `tag` to its page source if it is cached and dirty.
+  virtual auto flush(BufferTag tag) -> void = 0;
+
   /// \brief Flushes every dirty page and fsyncs the underlying source.
   virtual auto flush_all() -> void = 0;
 
   /// \brief Accumulated buffer counters.
   [[nodiscard]] virtual auto stats() const noexcept -> BufferStats = 0;
+};
+
+/// \brief Buffer pool with pin counts, content locks and a clock sweep.
+///
+/// Frames are allocated once; a page stays cached until a sweep replaces it.
+/// A pinned frame is never reused, and a dirty frame is written to the source
+/// before it is replaced.
+class ClockSweepBufferPool final : public BufferPool {
+  public:
+  explicit ClockSweepBufferPool(std::size_t capacity, PageSource& source, Wal& wal);
+  ~ClockSweepBufferPool() override;
+  ClockSweepBufferPool(const ClockSweepBufferPool&) = delete;
+  auto operator=(const ClockSweepBufferPool&) -> ClockSweepBufferPool& = delete;
+  ClockSweepBufferPool(ClockSweepBufferPool&&) = delete;
+  auto operator=(ClockSweepBufferPool&&) -> ClockSweepBufferPool& = delete;
+
+  [[nodiscard]] auto read(BufferTag tag) -> std::unique_ptr<PageGuard> override;
+  [[nodiscard]] auto new_page(BufferTag tag) -> std::unique_ptr<PageGuard> override;
+  auto flush(BufferTag tag) -> void override;
+  auto flush_all() -> void override;
+  [[nodiscard]] auto stats() const noexcept -> BufferStats override;
+
+  private:
+  class Impl;
+  std::unique_ptr<Impl> impl_;
 };
 
 }  // namespace kravidb::storage
