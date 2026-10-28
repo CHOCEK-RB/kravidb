@@ -14,6 +14,16 @@ using LSN = std::uint64_t;
 /// \brief LSN that names no record.
 inline constexpr LSN invalid_lsn = 0;
 
+/// \brief Identity of a WAL segment file.
+struct WalSegmentId {
+  std::uint32_t timeline{0};
+  std::uint32_t log{0};
+  std::uint32_t seg{0};
+
+  /// \brief Two ids name the same segment.
+  auto operator==(const WalSegmentId&) const -> bool = default;
+};
+
 /// \brief Size of a WAL segment file.
 inline constexpr std::size_t wal_segment_size = std::size_t{16} * 1024 * 1024;
 
