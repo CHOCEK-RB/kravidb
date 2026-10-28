@@ -48,6 +48,9 @@ export import storage.buffer_pool;
 /// \brief WAL contract and no-op adapter (`Wal`, `NoopWal`).
 export import storage.wal;
 
+/// \brief File-backed write-ahead log (`FileWal`).
+export import storage.file_wal;
+
 /// \brief Statement transaction contract (`TransactionManager`, `Transaction`).
 export import storage.transaction;
 
