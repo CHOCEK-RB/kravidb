@@ -108,6 +108,16 @@ class ClockSweepBufferPool::Impl {
                       [&desc] { return !desc.io_in_progress.load(std::memory_order_acquire); });
   }
 
+  // Publish completion under the lock wait_for_io uses, so a waiter cannot miss the wakeup.
+  auto finish_io(BufferDesc& desc, bool valid) -> void {
+    {
+      const std::lock_guard state_guard{desc.state_lock};
+      desc.valid.store(valid, std::memory_order_release);
+      desc.io_in_progress.store(false, std::memory_order_release);
+    }
+    desc.io_done.notify_all();
+  }
+
   auto mark_dirty(std::size_t index) -> void {
     auto& desc = frame(index);
     {
@@ -277,9 +287,7 @@ auto ClockSweepBufferPool::Impl::read(BufferTag tag) -> std::unique_ptr<PageGuar
   try {
     source_.read(tag.fork, tag.block, desc.page.mutable_bytes());
   } catch (...) {
-    desc.valid.store(false, std::memory_order_release);
-    desc.io_in_progress.store(false, std::memory_order_release);
-    desc.io_done.notify_all();
+    finish_io(desc, false);
     {
       std::unique_lock failed_lock{map_lock_};
       const auto failed = map_.find(tag);
@@ -291,9 +299,7 @@ auto ClockSweepBufferPool::Impl::read(BufferTag tag) -> std::unique_ptr<PageGuar
     throw;
   }
 
-  desc.valid.store(true, std::memory_order_release);
-  desc.io_in_progress.store(false, std::memory_order_release);
-  desc.io_done.notify_all();
+  finish_io(desc, true);
   return std::make_unique<Guard>(*this, index);
 }
 
