@@ -59,3 +59,12 @@ export import storage.catalog;
 
 /// \brief In-memory index adapter (`MemoryBTree`).
 export import index.memory_btree;
+
+/// \brief SQL source position (`SourcePosition`).
+export import sql.source;
+
+/// \brief SQL error value and result alias (`SqlError`, `SqlResult`).
+export import sql.error;
+
+/// \brief Typed SQL abstract syntax tree (`Stmt`, `Expr`, `Literal`).
+export import sql.ast;
