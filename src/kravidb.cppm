@@ -68,3 +68,6 @@ export import sql.error;
 
 /// \brief Typed SQL abstract syntax tree (`Stmt`, `Expr`, `Literal`).
 export import sql.ast;
+
+/// \brief SQL tokens and lexer (`Token`, `TokenKind`, `Keyword`).
+export import sql.lexer;

@@ -8,7 +8,7 @@ export import sql.source;
 
 export namespace kravidb::sql {
 
-/// \brief Error produced while parsing or analyzing a statement.
+/// \brief Error produced while lexing, parsing or analyzing a statement.
 struct SqlError {
   std::string sqlstate;
   std::string message;
