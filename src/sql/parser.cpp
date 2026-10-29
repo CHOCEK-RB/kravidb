@@ -512,7 +512,8 @@ auto Parser::parse_literal() -> SqlResult<Literal> {
       const char* const first = token.text.data();
       const char* const last = std::next(first, static_cast<std::ptrdiff_t>(token.text.size()));
       const auto [end, error] = std::from_chars(first, last, value);
-      if (error == std::errc{} && end == last) {
+      // 0 = no error. std::errc{} is avoided because clang-tidy flags it under libc++.
+      if (static_cast<int>(error) == 0 && end == last) {
         return Literal{.value = value, .position = token.position};
       }
       // Too large for BIGINT: keep it exact and let the analyzer decide.
