@@ -303,6 +303,11 @@ class FileRelationFile::Impl {
     resize_locked(fork, blocks);
   }
 
+  [[nodiscard]] auto block_count(Fork fork) const -> BlockNumber {
+    std::lock_guard lock{mutex_};
+    return size_of(fork);
+  }
+
   private:
   struct Position {
     std::uint64_t segment{0};
@@ -461,7 +466,7 @@ class FileRelationFile::Impl {
   std::filesystem::path base_directory_;
   std::string base_name_;
   std::uint64_t blocks_per_segment_{0};
-  std::mutex mutex_;
+  mutable std::mutex mutex_;
   std::map<std::uint64_t, std::unique_ptr<detail::OsFile>> files_;
   std::map<Fork, BlockNumber> sizes_;
 };
@@ -492,6 +497,10 @@ auto FileRelationFile::fsync(Fork fork) -> void {
 
 auto FileRelationFile::truncate(Fork fork, BlockNumber blocks) -> void {
   impl_->truncate(fork, blocks);
+}
+
+auto FileRelationFile::block_count(Fork fork) const -> BlockNumber {
+  return impl_->block_count(fork);
 }
 
 }  // namespace kravidb::storage

@@ -196,22 +196,37 @@ TEST(FileRelationFile, ExtendsAndTruncatesSegments) {
   EXPECT_FALSE(std::filesystem::exists(segment_path(directory.path(), 0)));
 }
 
+TEST(FileRelationFile, ReportsBlockCount) {
+  TempDirectory directory;
+  const auto node = make_node();
+  const auto segment_size = segment_bytes(crossing_segment_pages);
+  FileRelationFile file{directory.path(), node, segment_size};
+
+  EXPECT_EQ(file.block_count(Fork::main), 0U);
+  write_page(file, 0);
+  EXPECT_EQ(file.block_count(Fork::main), 1U);
+  file.extend(Fork::main, extended_pages - 1);
+  EXPECT_EQ(file.block_count(Fork::main), extended_pages);
+  file.truncate(Fork::main, 0);
+  EXPECT_EQ(file.block_count(Fork::main), 0U);
+}
+
 TEST(FilePageSource, ForwardsAllOperations) {
   TempDirectory directory;
   const auto node = make_node();
   const auto segment_size = segment_bytes(page_source_segment_pages);
   FileRelationFile file{directory.path(), node, segment_size};
-  FilePageSource source{file};
+  FilePageSource source{file, node};
 
   const auto page = make_page(page_source_block);
-  source.write(Fork::main, page_source_block, page);
-  source.fsync(Fork::main);
+  source.write(node, Fork::main, page_source_block, page);
+  source.fsync(node, Fork::main);
   std::array<std::byte, physical_page_size> read{};
-  source.read(Fork::main, page_source_block, read);
+  source.read(node, Fork::main, page_source_block, read);
   EXPECT_EQ(read, page);
 
-  source.extend(Fork::main, extended_pages);
-  source.truncate(Fork::main, page_source_block + 1);
+  source.extend(node, Fork::main, extended_pages);
+  source.truncate(node, Fork::main, page_source_block + 1);
   EXPECT_EQ(read_page(file, page_source_block), page);
 }
 

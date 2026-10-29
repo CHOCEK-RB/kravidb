@@ -285,7 +285,7 @@ auto ClockSweepBufferPool::Impl::read(BufferTag tag) -> std::unique_ptr<PageGuar
   clock_guard.unlock();
 
   try {
-    source_.read(tag.fork, tag.block, desc.page.mutable_bytes());
+    source_.read(tag.rel, tag.fork, tag.block, desc.page.mutable_bytes());
   } catch (...) {
     finish_io(desc, false);
     {
@@ -345,7 +345,7 @@ auto ClockSweepBufferPool::Impl::flush_all() -> void {
       flush_frame(index);
     }
   }
-  source_.fsync(Fork::main);
+  source_.fsync_all();
   fsyncs_.fetch_add(1, std::memory_order_relaxed);
 }
 
@@ -377,7 +377,7 @@ auto ClockSweepBufferPool::Impl::flush_frame(std::size_t index) -> void {
   }
 
   desc.page.set_checksum();
-  source_.write(desc.tag.fork, desc.tag.block, desc.page.bytes());
+  source_.write(desc.tag.rel, desc.tag.fork, desc.tag.block, desc.page.bytes());
   if (desc.dirty.exchange(false, std::memory_order_acq_rel)) {
     dirty_pages_.fetch_sub(1, std::memory_order_relaxed);
   }
