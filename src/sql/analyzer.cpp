@@ -509,6 +509,141 @@ class Analyzer {
                                                          .unique = create.unique}}};
 }
 
+[[nodiscard]] auto literal_matches(const Literal& literal, const AttributeDesc& attribute) -> bool {
+  if (std::holds_alternative<NullLiteral>(literal.value)) {
+    return !attribute.not_null;
+  }
+  if (attribute.type_oid == storage::int8_oid) {
+    return std::holds_alternative<std::int64_t>(literal.value);
+  }
+  if (attribute.type_oid == storage::varchar_oid) {
+    return std::holds_alternative<std::string>(literal.value);
+  }
+  return attribute.type_oid == storage::numeric_oid &&
+         (std::holds_alternative<std::int64_t>(literal.value) ||
+          std::holds_alternative<DecimalLiteral>(literal.value));
+}
+
+[[nodiscard]] auto analyze_literal_value(const Literal& literal, const AttributeDesc& attribute)
+    -> SqlResult<Const> {
+  if (std::holds_alternative<NullLiteral>(literal.value)) {
+    if (attribute.not_null) {
+      return std::unexpected{make_error(
+          sqlstate::not_null_violation,
+          std::format("null value in column \"{}\" violates not-null constraint", attribute.name),
+          literal.position)};
+    }
+    return Const{.value = std::monostate{}};
+  }
+  if (!literal_matches(literal, attribute)) {
+    return std::unexpected{
+        make_error(sqlstate::datatype_mismatch,
+                   std::format("value for column \"{}\" has incompatible type", attribute.name),
+                   literal.position)};
+  }
+  if (const auto* value = std::get_if<std::int64_t>(&literal.value)) {
+    if (attribute.type_oid == storage::numeric_oid) {
+      return Const{.value = storage::Decimal{.scale = 0, .unscaled = *value}};
+    }
+    return Const{.value = *value};
+  }
+  if (const auto* value = std::get_if<std::string>(&literal.value)) {
+    return Const{.value = *value};
+  }
+  auto decimal = parse_decimal(std::get<DecimalLiteral>(literal.value).text, literal.position);
+  if (!decimal.has_value()) {
+    return std::unexpected{std::move(decimal.error())};
+  }
+  return Const{.value = decimal.value()};
+}
+
+[[nodiscard]] auto analyze_insert(const InsertStmt& insert, const storage::Catalog& catalog,
+                                  storage::Transaction& transaction)
+    -> SqlResult<AnalyzedStatement> {
+  auto relation = require_table(catalog, transaction, insert.table);
+  if (!relation.has_value()) {
+    return std::unexpected{std::move(relation.error())};
+  }
+  std::vector<AttributeDesc> attributes;
+  if (insert.columns.empty()) {
+    attributes = relation->attributes;
+    std::ranges::sort(attributes, std::less{}, &AttributeDesc::attnum);
+  } else {
+    std::unordered_set<std::string> names;
+    for (const auto& column : insert.columns) {
+      if (!names.insert(column.name).second) {
+        return std::unexpected{make_error(
+            sqlstate::duplicate_column,
+            std::format("column \"{}\" specified more than once", column.name), column.position)};
+      }
+      auto attribute = require_attribute(relation.value(), column);
+      if (!attribute.has_value()) {
+        return std::unexpected{std::move(attribute.error())};
+      }
+      attributes.push_back(std::move(attribute.value()));
+    }
+  }
+  if (attributes.size() != insert.values.size()) {
+    return std::unexpected{make_error(sqlstate::syntax_error,
+                                      "INSERT has more target columns than expressions",
+                                      insert.table.position)};
+  }
+  InsertCommand command{.relation = relation->oid};
+  for (std::size_t index = 0; index < attributes.size(); ++index) {
+    auto value = analyze_literal_value(insert.values.at(index), attributes.at(index));
+    if (!value.has_value()) {
+      return std::unexpected{std::move(value.error())};
+    }
+    command.values.push_back(
+        AnalyzedValue{.attribute = attributes.at(index), .value = std::move(value.value())});
+  }
+  return AnalyzedStatement{std::move(command)};
+}
+
+[[nodiscard]] auto analyze_drop_table(const DropTableStmt& drop, const storage::Catalog& catalog,
+                                      storage::Transaction& transaction)
+    -> SqlResult<AnalyzedStatement> {
+  auto relation = catalog.lookup_relation(transaction, drop.table.name);
+  if (!relation.has_value()) {
+    if (drop.if_exists) {
+      return AnalyzedStatement{DropTableCommand{.if_exists = true}};
+    }
+    return std::unexpected{make_error(sqlstate::undefined_object,
+                                      std::format("table \"{}\" does not exist", drop.table.name),
+                                      drop.table.position)};
+  }
+  if (!relation->indexes.empty()) {
+    return std::unexpected{make_error(
+        sqlstate::dependent_objects_still_exist,
+        std::format("cannot drop table \"{}\" because other objects depend on it", drop.table.name),
+        drop.table.position)};
+  }
+  return AnalyzedStatement{
+      DropTableCommand{.relation = relation->oid, .if_exists = drop.if_exists}};
+}
+
+[[nodiscard]] auto analyze_alter_drop(const AlterTableDropColumnStmt& alter,
+                                      const storage::Catalog& catalog,
+                                      storage::Transaction& transaction)
+    -> SqlResult<AnalyzedStatement> {
+  auto relation = require_table(catalog, transaction, alter.table);
+  if (!relation.has_value()) {
+    return std::unexpected{std::move(relation.error())};
+  }
+  auto attribute = require_attribute(relation.value(), alter.column);
+  if (!attribute.has_value()) {
+    return std::unexpected{std::move(attribute.error())};
+  }
+  if (attribute->primary_key || !relation->indexes.empty()) {
+    return std::unexpected{
+        make_error(sqlstate::dependent_objects_still_exist,
+                   std::format("cannot drop indexed column \"{}\"", alter.column.name),
+                   alter.column.position)};
+  }
+  return AnalyzedStatement{
+      AlterTableDropColumnCommand{.relation = relation->oid, .attnum = attribute->attnum}};
+}
+
 /// \brief Output columns of `select`; `*` expands to every column in `attnum` order.
 [[nodiscard]] auto resolve_targets(const SelectStmt& select, const RelationDesc& relation,
                                    const Analyzer& analyzer)
@@ -642,6 +777,15 @@ auto analyze_statement(const Stmt& statement, const storage::Catalog& catalog,
   }
   if (const auto* create = std::get_if<CreateIndexStmt>(&statement)) {
     return analyze_create_index(*create, catalog, transaction);
+  }
+  if (const auto* insert = std::get_if<InsertStmt>(&statement)) {
+    return analyze_insert(*insert, catalog, transaction);
+  }
+  if (const auto* drop = std::get_if<DropTableStmt>(&statement)) {
+    return analyze_drop_table(*drop, catalog, transaction);
+  }
+  if (const auto* alter = std::get_if<AlterTableDropColumnStmt>(&statement)) {
+    return analyze_alter_drop(*alter, catalog, transaction);
   }
   return std::unexpected{unsupported_statement(statement)};
 }
