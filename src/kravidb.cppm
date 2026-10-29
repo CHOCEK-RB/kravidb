@@ -74,3 +74,12 @@ export import sql.ast;
 
 /// \brief SQL tokens and lexer (`Token`, `TokenKind`, `Keyword`).
 export import sql.lexer;
+
+/// \brief SELECT parser (`parse`, `parse_tokens`).
+export import sql.parser;
+
+/// \brief Analyzed query model (`Query`, `TypedExpr`, `SqlType`).
+export import sql.query;
+
+/// \brief SELECT analyzer and front-end entry point (`analyze`, `prepare_query`).
+export import sql.analyzer;
