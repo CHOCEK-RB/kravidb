@@ -66,7 +66,7 @@ static_assert(sizeof(WalPageHeader) == wal_page_header_size);
 /// \brief Long header at the start of the first page of segment 0.
 struct WalLongPageHeader {
   WalPageHeader page;
-  std::uint64_t sysid{0};
+  std::uint64_t sysid{wal_system_identifier};
   std::uint32_t segment_size{0};
   std::uint32_t block_size{0};
 };
