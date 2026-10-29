@@ -15,6 +15,8 @@ using kravidb::storage::FileCatalog;
 using kravidb::storage::FileRelationFile;
 using kravidb::storage::Fork;
 using kravidb::storage::HeapTuple;
+using kravidb::storage::HeapTupleHeader;
+using kravidb::storage::ItemPointerData;
 using kravidb::storage::kd_am_oid;
 using kravidb::storage::kd_attribute_oid;
 using kravidb::storage::kd_class_oid;
@@ -87,6 +89,35 @@ auto mutate_first_tuple(const std::filesystem::path& root, Oid oid, const TupleM
   }
   const auto destination = page.mutable_bytes().subspan(item.offset(), replacement.size());
   std::ranges::copy(replacement.bytes(), destination.begin());
+  page.set_checksum();
+  file.write(Fork::main, 0, page.bytes());
+  file.fsync(Fork::main);
+}
+
+auto append_first_page_tuple(const std::filesystem::path& root, Oid oid,
+                             const std::vector<std::optional<Field>>& fields) -> void {
+  FileRelationFile file{root, relation_node(oid)};
+  std::array<std::byte, physical_page_size> buffer{};
+  file.read(Fork::main, 0, buffer);
+  auto page = Page::from_bytes(buffer);
+  HeapTupleHeader header{};
+  header.t_xmin = 1;
+  header.t_ctid = ItemPointerData{.block = 0, .offset = page.item_count()};
+  const auto tuple = HeapTuple::from_fields(fields, header);
+  auto page_header = page.header();
+  if (page.free_space() < tuple.size() + sizeof(kravidb::storage::ItemId)) {
+    throw std::runtime_error{"test tuple does not fit in the page"};
+  }
+  const auto offset = static_cast<std::uint16_t>(page_header.pd_upper - tuple.size());
+  const auto destination = page.mutable_bytes().subspan(offset, tuple.size());
+  std::ranges::copy(tuple.bytes(), destination.begin());
+  page_header.pd_upper = offset;
+  page.set_header(page_header);
+  kravidb::storage::ItemId item;
+  item.set_offset(offset);
+  item.set_length(static_cast<std::uint16_t>(tuple.size()));
+  item.set_flags(kravidb::storage::ItemIdFlag::normal);
+  static_cast<void>(page.add_item(item));
   page.set_checksum();
   file.write(Fork::main, 0, page.bytes());
   file.fsync(Fork::main);
@@ -345,6 +376,26 @@ TEST_F(CatalogTest, RelCacheRequireColumnThrows42703) {
             }),
             "42703");
   EXPECT_THROW(static_cast<void>(cache.require_column(oid, "missing")), SqlStateError);
+}
+
+TEST_F(CatalogTest, ReconstructsPrimaryIndex) {
+  FileCatalog catalog{path()};
+  catalog.bootstrap();
+  constexpr Oid test_index_oid = 500;
+  append_first_page_tuple(path(), kd_index_oid,
+                          {Field{static_cast<std::int64_t>(test_index_oid)},
+                           Field{static_cast<std::int64_t>(kd_class_oid)}, Field{std::int64_t{1}},
+                           Field{std::int64_t{1}}, Field{std::int64_t{1}}});
+  FileCatalog indexed{path()};
+  indexed.open();
+  Transaction transaction{.xid = 1};
+  const auto relation = indexed.lookup_relation(transaction, "kd_class");
+  ASSERT_TRUE(relation.has_value());
+  EXPECT_EQ(relation->primary_index, test_index_oid);
+  ASSERT_EQ(relation->indexes.size(), 1U);
+  EXPECT_EQ(relation->indexes.at(0), test_index_oid);
+  ASSERT_EQ(relation->attributes.size(), kd_class_column_count);
+  EXPECT_TRUE(relation->attributes.at(0).primary_key);
 }
 
 TEST_F(CatalogTest, FileCatalogMutatorsThrowReadOnly) {
