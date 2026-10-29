@@ -30,6 +30,8 @@ struct RelFileNode {
 
   /// \brief Two nodes point to the same relation file.
   auto operator==(const RelFileNode&) const -> bool = default;
+  /// \brief Orders nodes for associative containers.
+  auto operator<=>(const RelFileNode&) const = default;
 };
 
 /// \brief Contract of a relation file over fixed-size blocks.
@@ -61,6 +63,9 @@ class RelationFile {
 
   /// \brief Truncates `fork` to `blocks` blocks.
   virtual auto truncate(Fork fork, BlockNumber blocks) -> void = 0;
+
+  /// \brief Number of blocks currently present in `fork`.
+  [[nodiscard]] virtual auto block_count(Fork fork) const -> BlockNumber = 0;
 };
 
 }  // namespace kravidb::storage

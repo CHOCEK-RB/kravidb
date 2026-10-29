@@ -27,6 +27,7 @@ constexpr std::byte last_marker{0xCD};
 constexpr std::byte fill_marker{0xFF};
 constexpr std::uint32_t written_block = 7;
 constexpr std::uint32_t unwritten_block = 3;
+constexpr kravidb::storage::RelFileNode relation_node{0, 1, 42};
 constexpr std::int64_t index_key = 7;
 constexpr std::uint64_t index_row = 42;
 
@@ -35,10 +36,10 @@ TEST(MemoryPageSource, RoundTripsTheSameBytes) {
   std::array<std::byte, physical_page_size> written{};
   written.at(0) = first_marker;
   written.at(physical_page_size - 1) = last_marker;
-  source.write(Fork::main, written_block, written);
+  source.write(relation_node, Fork::main, written_block, written);
 
   std::array<std::byte, physical_page_size> read{};
-  source.read(Fork::main, written_block, read);
+  source.read(relation_node, Fork::main, written_block, read);
 
   EXPECT_EQ(read, written);
 }
@@ -47,7 +48,7 @@ TEST(MemoryPageSource, ReadsUnwrittenBlocksAsZeroes) {
   MemoryPageSource source;
   std::array<std::byte, physical_page_size> page{};
   page.fill(fill_marker);
-  source.read(Fork::main, unwritten_block, page);
+  source.read(relation_node, Fork::main, unwritten_block, page);
   EXPECT_TRUE(std::ranges::all_of(page, [](std::byte value) { return value == std::byte{0}; }));
 }
 
@@ -58,16 +59,16 @@ TEST(MemoryPageSource, ExtendsAndTruncatesLogicalSize) {
   MemoryPageSource source;
   std::array<std::byte, physical_page_size> page{};
   page.front() = first_marker;
-  source.write(Fork::main, written_block, page);
+  source.write(relation_node, Fork::main, written_block, page);
 
-  source.extend(Fork::main, 2);
-  source.read(Fork::main, written_block, page);
+  source.extend(relation_node, Fork::main, 2);
+  source.read(relation_node, Fork::main, written_block, page);
   EXPECT_EQ(page.front(), first_marker);
-  source.read(Fork::main, extended_block, page);
+  source.read(relation_node, Fork::main, extended_block, page);
   EXPECT_TRUE(std::ranges::all_of(page, [](std::byte value) { return value == std::byte{0}; }));
 
-  source.truncate(Fork::main, truncate_size);
-  source.read(Fork::main, written_block, page);
+  source.truncate(relation_node, Fork::main, truncate_size);
+  source.read(relation_node, Fork::main, written_block, page);
   EXPECT_TRUE(std::ranges::all_of(page, [](std::byte value) { return value == std::byte{0}; }));
 }
 

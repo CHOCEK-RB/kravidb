@@ -10,6 +10,7 @@ using namespace kravidb::storage;
 constexpr std::uint32_t test_tablespace = 1;
 constexpr std::uint32_t test_database = 2;
 constexpr std::uint32_t test_relation = 3;
+constexpr std::uint32_t second_relation = 4;
 constexpr std::byte test_marker{0x5A};
 constexpr std::byte second_marker{0x6B};
 constexpr BlockNumber missing_block = 9;
@@ -21,35 +22,46 @@ auto make_tag(BlockNumber block) -> BufferTag {
 
 class CountingSource final : public PageSource {
   public:
-  auto read(Fork fork, BlockNumber block, std::span<std::byte, physical_page_size> out)
-      -> void override {
+  auto read(const RelFileNode& rel, Fork fork, BlockNumber block,
+            std::span<std::byte, physical_page_size> out) -> void override {
     ++reads_;
     if (before_read_) {
       before_read_();
     }
-    inner_.read(fork, block, out);
+    inner_.read(rel, fork, block, out);
   }
 
-  auto write(Fork fork, BlockNumber block, std::span<const std::byte, physical_page_size> input)
-      -> void override {
+  auto write(const RelFileNode& rel, Fork fork, BlockNumber block,
+             std::span<const std::byte, physical_page_size> input) -> void override {
     ++writes_;
-    inner_.write(fork, block, input);
+    inner_.write(rel, fork, block, input);
   }
 
-  auto extend(Fork fork, BlockNumber blocks) -> void override { inner_.extend(fork, blocks); }
-  auto truncate(Fork fork, BlockNumber blocks) -> void override { inner_.truncate(fork, blocks); }
-  auto fsync(Fork fork) -> void override {
+  auto extend(const RelFileNode& rel, Fork fork, BlockNumber blocks) -> void override {
+    inner_.extend(rel, fork, blocks);
+  }
+  auto truncate(const RelFileNode& rel, Fork fork, BlockNumber blocks) -> void override {
+    inner_.truncate(rel, fork, blocks);
+  }
+  auto fsync(const RelFileNode& rel, Fork fork) -> void override {
     ++fsyncs_;
-    inner_.fsync(fork);
+    inner_.fsync(rel, fork);
+  }
+  auto fsync_all() -> void override {
+    ++fsyncs_;
+    inner_.fsync_all();
+  }
+  [[nodiscard]] auto block_count(const RelFileNode& rel, Fork fork) const -> BlockNumber override {
+    return inner_.block_count(rel, fork);
   }
 
   [[nodiscard]] auto reads() const noexcept -> std::size_t { return reads_; }
   [[nodiscard]] auto writes() const noexcept -> std::size_t { return writes_; }
   [[nodiscard]] auto fsyncs() const noexcept -> std::size_t { return fsyncs_; }
 
-  auto read_block(BlockNumber block) -> std::vector<std::byte> {
+  auto read_block(const RelFileNode& rel, BlockNumber block) -> std::vector<std::byte> {
     std::vector<std::byte> bytes(physical_page_size);
-    inner_.read(Fork::main, block, std::span<std::byte, physical_page_size>{bytes});
+    inner_.read(rel, Fork::main, block, std::span<std::byte, physical_page_size>{bytes});
     return bytes;
   }
 
@@ -148,7 +160,7 @@ TEST(BufferPool, DirtyFrameIsWrittenBeforeReuse) {
   EXPECT_EQ(pool.stats().writes, 1U);
   EXPECT_EQ(pool.stats().dirty_pages, 0U);
 
-  const auto written = source.read_block(0);
+  const auto written = source.read_block(make_tag(0).rel, 0);
   EXPECT_EQ(written.at(page_header_size), test_marker);
 }
 
@@ -262,6 +274,25 @@ TEST(BufferPool, TwoReadersLoadThePageOnce) {
   EXPECT_EQ(pool.stats().misses, 1U);
   EXPECT_EQ(pool.stats().hits, 1U);
   EXPECT_EQ(pool.stats().pinned_pages, 0U);
+}
+
+TEST(BufferPool, SeparatesRelationsWithTheSameBlock) {
+  CountingSource source;
+  RecordingWal wal;
+  ClockSweepBufferPool pool{2, source, wal};
+  const auto first_rel = RelFileNode{test_tablespace, test_database, test_relation};
+  const auto second_rel = RelFileNode{test_tablespace, test_database, second_relation};
+
+  auto first = pool.new_page(BufferTag{first_rel, Fork::main, 0});
+  std::ranges::fill(first->page().mutable_bytes().subspan(page_header_size, 1), test_marker);
+  first.reset();
+  auto second = pool.new_page(BufferTag{second_rel, Fork::main, 0});
+  std::ranges::fill(second->page().mutable_bytes().subspan(page_header_size, 1), second_marker);
+  second.reset();
+
+  pool.flush_all();
+  EXPECT_EQ(source.read_block(first_rel, 0).at(page_header_size), test_marker);
+  EXPECT_EQ(source.read_block(second_rel, 0).at(page_header_size), second_marker);
 }
 
 }  // namespace

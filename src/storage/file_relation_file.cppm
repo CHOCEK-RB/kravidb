@@ -34,6 +34,7 @@ class FileRelationFile final : public RelationFile {
   auto extend(Fork fork, BlockNumber blocks) -> void override;
   auto fsync(Fork fork) -> void override;
   auto truncate(Fork fork, BlockNumber blocks) -> void override;
+  [[nodiscard]] auto block_count(Fork fork) const -> BlockNumber override;
 
   private:
   class Impl;
