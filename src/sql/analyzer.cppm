@@ -49,6 +49,16 @@ inline constexpr std::uint8_t max_decimal_precision = storage::decimal_max_scale
 [[nodiscard]] auto analyze(const Stmt& statement, const storage::RelCache& cache)
     -> SqlResult<Query>;
 
+/// \brief Resolves and validates any supported DML/DDL statement without mutating the catalog.
+[[nodiscard]] auto analyze_statement(const Stmt& statement, const storage::Catalog& catalog,
+                                     storage::Transaction& transaction)
+    -> SqlResult<AnalyzedStatement>;
+
+/// \brief Parses and validates one DML/DDL statement without executing it.
+[[nodiscard]] auto prepare_statement(std::string_view text, const storage::Catalog& catalog,
+                                     storage::Transaction& transaction)
+    -> SqlResult<AnalyzedStatement>;
+
 /// \brief Parses and analyzes `text`: the single entry point of the SQL front end.
 ///
 /// \details Any statement that fails to lex, parse or analyze returns an

@@ -21,6 +21,18 @@ inline constexpr std::string_view statement_too_complex = "54001";
 inline constexpr std::string_view undefined_table = "42P01";
 /// \brief Column does not exist in the relation.
 inline constexpr std::string_view undefined_column = "42703";
+/// \brief A named database object does not exist.
+inline constexpr std::string_view undefined_object = "42704";
+/// \brief A relation with the requested name already exists.
+inline constexpr std::string_view duplicate_table = "42P07";
+/// \brief A column name occurs more than once.
+inline constexpr std::string_view duplicate_column = "42701";
+/// \brief A required value is NULL.
+inline constexpr std::string_view not_null_violation = "23502";
+/// \brief A unique or primary-key value is duplicated.
+inline constexpr std::string_view unique_violation = "23505";
+/// \brief An object cannot be removed while dependants exist.
+inline constexpr std::string_view dependent_objects_still_exist = "2BP01";
 /// \brief Relation exists but is not a table.
 inline constexpr std::string_view wrong_object_type = "42809";
 /// \brief Operand types are incompatible.

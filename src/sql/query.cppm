@@ -91,6 +91,61 @@ struct Query {
   std::unique_ptr<TypedExpr> where;
 };
 
+/// \brief One resolved input value paired with its destination attribute.
+struct AnalyzedValue {
+  storage::AttributeDesc attribute;
+  Const value;
+};
+
+struct InsertCommand {
+  storage::Oid relation{storage::invalid_oid};
+  std::vector<AnalyzedValue> values;
+};
+
+struct UpdateCommand {
+  storage::Oid relation{storage::invalid_oid};
+  std::vector<AnalyzedValue> assignments;
+  std::unique_ptr<TypedExpr> where;
+};
+
+struct DeleteCommand {
+  storage::Oid relation{storage::invalid_oid};
+  std::unique_ptr<TypedExpr> where;
+};
+
+struct CreateTableCommand {
+  storage::TableDef definition;
+};
+
+struct CreateIndexCommand {
+  storage::IndexDef definition;
+};
+
+struct DropTableCommand {
+  storage::Oid relation{storage::invalid_oid};
+  bool if_exists{false};
+};
+
+struct DropIndexCommand {
+  storage::Oid index{storage::invalid_oid};
+  bool if_exists{false};
+};
+
+struct AlterTableAddColumnCommand {
+  storage::Oid relation{storage::invalid_oid};
+  storage::AttributeDesc column;
+};
+
+struct AlterTableDropColumnCommand {
+  storage::Oid relation{storage::invalid_oid};
+  std::int16_t attnum{0};
+};
+
+using AnalyzedStatement =
+    std::variant<Query, InsertCommand, UpdateCommand, DeleteCommand, CreateTableCommand,
+                 CreateIndexCommand, DropTableCommand, DropIndexCommand, AlterTableAddColumnCommand,
+                 AlterTableDropColumnCommand>;
+
 /// \brief SQL spelling of a type, used in error messages.
 [[nodiscard]] auto type_name(const SqlType& type) -> std::string {
   switch (type.kind) {
