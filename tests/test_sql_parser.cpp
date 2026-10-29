@@ -273,6 +273,92 @@ TEST(SqlParser, ParseTokensAcceptsLexerOutput) {
   EXPECT_TRUE(std::holds_alternative<SelectStmt>(statement.value()));
 }
 
+TEST(SqlParser, ParsesInsertWithAndWithoutColumns) {
+  auto explicit_columns = sql::parse("INSERT INTO users (id, name) VALUES (1, 'Ana')");
+  ASSERT_TRUE(explicit_columns.has_value()) << explicit_columns.error().message;
+  const auto& insert = std::get<InsertStmt>(explicit_columns.value());
+  EXPECT_EQ(insert.table.name, "users");
+  ASSERT_EQ(insert.columns.size(), 2U);
+  EXPECT_EQ(insert.columns.at(0).name, "id");
+  ASSERT_EQ(insert.values.size(), 2U);
+
+  auto implicit_columns = sql::parse("INSERT INTO users VALUES (1, 'Ana')");
+  ASSERT_TRUE(implicit_columns.has_value()) << implicit_columns.error().message;
+  EXPECT_TRUE(std::get<InsertStmt>(implicit_columns.value()).columns.empty());
+}
+
+TEST(SqlParser, ParsesUpdateAndDeleteWithFilters) {
+  auto update = sql::parse("UPDATE users SET name = 'Ana', age = 20 WHERE id = 1");
+  ASSERT_TRUE(update.has_value()) << update.error().message;
+  const auto& update_stmt = std::get<UpdateStmt>(update.value());
+  ASSERT_EQ(update_stmt.assignments.size(), 2U);
+  EXPECT_EQ(update_stmt.assignments.at(1).column.name, "age");
+  ASSERT_NE(update_stmt.where, nullptr);
+
+  auto delete_ = sql::parse("DELETE FROM users WHERE id = 1");
+  ASSERT_TRUE(delete_.has_value()) << delete_.error().message;
+  EXPECT_NE(std::get<DeleteStmt>(delete_.value()).where, nullptr);
+}
+
+TEST(SqlParser, RejectsMalformedDml) {
+  constexpr std::string_view empty_columns = "INSERT INTO t () VALUES (1)";
+  expect_error(empty_columns, sqlstate::syntax_error, position_of(empty_columns, ")"));
+
+  constexpr std::string_view trailing_value = "INSERT INTO t VALUES (1,)";
+  expect_error(trailing_value, sqlstate::syntax_error, position_of(trailing_value, ")"));
+
+  constexpr std::string_view missing_assignment = "UPDATE t SET WHERE id = 1";
+  expect_error(missing_assignment, sqlstate::syntax_error,
+               position_of(missing_assignment, "WHERE"));
+}
+
+TEST(SqlParser, ParsesCreateTableTypesAndPrimaryKey) {
+  auto statement = sql::parse(
+      "CREATE TABLE accounts (id BIGINT PRIMARY KEY, name VARCHAR, balance DECIMAL(10,2))");
+  ASSERT_TRUE(statement.has_value()) << statement.error().message;
+  const auto& create = std::get<CreateTableStmt>(statement.value());
+  ASSERT_EQ(create.columns.size(), 3U);
+  EXPECT_TRUE(create.columns.at(0).is_primary_key);
+  EXPECT_EQ(create.columns.at(1).type.kind, TypeNameKind::varchar);
+  ASSERT_TRUE(create.columns.at(2).type.decimal.has_value());
+  EXPECT_EQ(create.columns.at(2).type.decimal->precision, 10);
+  EXPECT_EQ(create.columns.at(2).type.decimal->scale, 2);
+}
+
+TEST(SqlParser, ParsesCreateIndexDropAndAlter) {
+  auto index = sql::parse("CREATE UNIQUE INDEX accounts_id_idx ON accounts (id)");
+  ASSERT_TRUE(index.has_value()) << index.error().message;
+  EXPECT_TRUE(std::get<CreateIndexStmt>(index.value()).unique);
+
+  auto drop = sql::parse("DROP TABLE IF EXISTS accounts");
+  ASSERT_TRUE(drop.has_value()) << drop.error().message;
+  EXPECT_TRUE(std::get<DropTableStmt>(drop.value()).if_exists);
+
+  auto add = sql::parse("ALTER TABLE accounts ADD COLUMN age BIGINT");
+  ASSERT_TRUE(add.has_value()) << add.error().message;
+  EXPECT_EQ(std::get<AlterTableAddColumnStmt>(add.value()).column.name.name, "age");
+
+  auto remove = sql::parse("ALTER TABLE accounts DROP COLUMN age");
+  ASSERT_TRUE(remove.has_value()) << remove.error().message;
+  EXPECT_EQ(std::get<AlterTableDropColumnStmt>(remove.value()).column.name, "age");
+}
+
+TEST(SqlParser, RejectsMalformedDdl) {
+  constexpr std::string_view empty_table = "CREATE TABLE t ()";
+  expect_error(empty_table, sqlstate::syntax_error, position_of(empty_table, ")"));
+
+  constexpr std::string_view decimal_without_scale = "CREATE TABLE t (n DECIMAL(10))";
+  expect_error(decimal_without_scale, sqlstate::syntax_error,
+               position_of(decimal_without_scale, ")"));
+
+  constexpr std::string_view malformed_if = "DROP TABLE IF t";
+  expect_error(malformed_if, sqlstate::syntax_error, position_of(malformed_if, "t"));
+
+  constexpr std::string_view missing_column_keyword = "ALTER TABLE t ADD age BIGINT";
+  expect_error(missing_column_keyword, sqlstate::syntax_error,
+               position_of(missing_column_keyword, "age"));
+}
+
 // --- Rejected statements -----------------------------------------------------------------------
 
 TEST(SqlParser, RejectsJoinOrderByAndLimitAsUnsupported) {
