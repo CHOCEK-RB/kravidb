@@ -159,6 +159,11 @@ class Parser {
   [[nodiscard]] auto parse_insert() -> SqlResult<InsertStmt>;
   [[nodiscard]] auto parse_update() -> SqlResult<UpdateStmt>;
   [[nodiscard]] auto parse_delete() -> SqlResult<DeleteStmt>;
+  [[nodiscard]] auto parse_create() -> SqlResult<Stmt>;
+  [[nodiscard]] auto parse_drop() -> SqlResult<Stmt>;
+  [[nodiscard]] auto parse_alter() -> SqlResult<Stmt>;
+  [[nodiscard]] auto parse_type_name() -> SqlResult<TypeName>;
+  [[nodiscard]] auto parse_column_definition() -> SqlResult<ColumnDef>;
   [[nodiscard]] auto parse_identifier_list() -> SqlResult<std::vector<Identifier>>;
   [[nodiscard]] auto parse_literal_list() -> SqlResult<std::vector<Literal>>;
   [[nodiscard]] auto parse_assignments() -> SqlResult<std::vector<Assignment>>;
@@ -266,11 +271,11 @@ auto Parser::parse_statement() -> SqlResult<Stmt> {
           return std::unexpected{std::move(result.error())};
         }
       case Keyword::create:
-        return std::unexpected{unsupported("CREATE", first)};
+        return parse_create();
       case Keyword::drop:
-        return std::unexpected{unsupported("DROP", first)};
+        return parse_drop();
       case Keyword::alter:
-        return std::unexpected{unsupported("ALTER", first)};
+        return parse_alter();
       default:
         return std::unexpected{syntax_error(first)};
     }
@@ -426,6 +431,214 @@ auto Parser::parse_delete() -> SqlResult<DeleteStmt> {
     where = std::move(expression.value());
   }
   return DeleteStmt{.table = std::move(table.value()), .where = std::move(where)};
+}
+
+auto Parser::parse_type_name() -> SqlResult<TypeName> {
+  const Token& token = current();
+  if (at_keyword(Keyword::bigint) || at_keyword(Keyword::int8)) {
+    advance();
+    return TypeName{
+        .kind = TypeNameKind::bigint, .decimal = std::nullopt, .position = token.position};
+  }
+  if (at_keyword(Keyword::varchar) || at_keyword(Keyword::text)) {
+    advance();
+    return TypeName{
+        .kind = TypeNameKind::varchar, .decimal = std::nullopt, .position = token.position};
+  }
+  if (!at_keyword(Keyword::decimal) && !at_keyword(Keyword::numeric)) {
+    return std::unexpected{syntax_error(token)};
+  }
+  advance();
+  if (!at(TokenKind::left_paren)) {
+    return std::unexpected{syntax_error(current())};
+  }
+  advance();
+  const Token& precision_token = current();
+  auto precision_literal = parse_literal();
+  if (!precision_literal.has_value() ||
+      !std::holds_alternative<std::int64_t>(precision_literal->value)) {
+    return std::unexpected{precision_literal.has_value() ? syntax_error(precision_token)
+                                                         : std::move(precision_literal.error())};
+  }
+  if (!at(TokenKind::comma)) {
+    return std::unexpected{syntax_error(current())};
+  }
+  advance();
+  const Token& scale_token = current();
+  auto scale_literal = parse_literal();
+  if (!scale_literal.has_value() || !std::holds_alternative<std::int64_t>(scale_literal->value)) {
+    return std::unexpected{scale_literal.has_value() ? syntax_error(scale_token)
+                                                     : std::move(scale_literal.error())};
+  }
+  const auto precision = std::get<std::int64_t>(precision_literal->value);
+  const auto scale = std::get<std::int64_t>(scale_literal->value);
+  if (precision < 0 || precision > std::numeric_limits<std::uint8_t>::max() || scale < 0 ||
+      scale > std::numeric_limits<std::uint8_t>::max()) {
+    return std::unexpected{syntax_error(precision < 0 ? precision_token : scale_token)};
+  }
+  if (!at(TokenKind::right_paren)) {
+    return std::unexpected{syntax_error(current())};
+  }
+  advance();
+  return TypeName{.kind = TypeNameKind::decimal,
+                  .decimal = DecimalType{.precision = static_cast<std::uint8_t>(precision),
+                                         .scale = static_cast<std::uint8_t>(scale)},
+                  .position = token.position};
+}
+
+auto Parser::parse_column_definition() -> SqlResult<ColumnDef> {
+  auto name = expect_identifier();
+  if (!name.has_value()) {
+    return std::unexpected{std::move(name.error())};
+  }
+  auto type = parse_type_name();
+  if (!type.has_value()) {
+    return std::unexpected{std::move(type.error())};
+  }
+  bool primary_key = false;
+  if (at_keyword(Keyword::primary)) {
+    advance();
+    if (auto key = expect_keyword(Keyword::key); !key.has_value()) {
+      return std::unexpected{std::move(key.error())};
+    }
+    primary_key = true;
+  }
+  return ColumnDef{.name = std::move(name.value()),
+                   .type = std::move(type.value()),
+                   .is_primary_key = primary_key};
+}
+
+auto Parser::parse_create() -> SqlResult<Stmt> {
+  advance();
+  bool unique = false;
+  if (at_keyword(Keyword::unique)) {
+    unique = true;
+    advance();
+  }
+  if (at_keyword(Keyword::table)) {
+    if (unique) {
+      return std::unexpected{syntax_error(current())};
+    }
+    advance();
+    auto table = expect_identifier();
+    if (!table.has_value()) {
+      return std::unexpected{std::move(table.error())};
+    }
+    if (!at(TokenKind::left_paren)) {
+      return std::unexpected{syntax_error(current())};
+    }
+    advance();
+    std::vector<ColumnDef> columns;
+    while (true) {
+      auto column = parse_column_definition();
+      if (!column.has_value()) {
+        return std::unexpected{std::move(column.error())};
+      }
+      columns.push_back(std::move(column.value()));
+      if (!at(TokenKind::comma)) {
+        break;
+      }
+      advance();
+    }
+    if (!at(TokenKind::right_paren)) {
+      return std::unexpected{syntax_error(current())};
+    }
+    advance();
+    return Stmt{CreateTableStmt{.table = std::move(table.value()), .columns = std::move(columns)}};
+  }
+  if (!at_keyword(Keyword::index)) {
+    return std::unexpected{syntax_error(current())};
+  }
+  advance();
+  auto index = expect_identifier();
+  if (!index.has_value()) {
+    return std::unexpected{std::move(index.error())};
+  }
+  if (!at(TokenKind::identifier) || current().text != "on") {
+    return std::unexpected{syntax_error(current())};
+  }
+  advance();
+  auto table = expect_identifier();
+  if (!table.has_value()) {
+    return std::unexpected{std::move(table.error())};
+  }
+  if (!at(TokenKind::left_paren)) {
+    return std::unexpected{syntax_error(current())};
+  }
+  advance();
+  auto column = expect_identifier();
+  if (!column.has_value()) {
+    return std::unexpected{std::move(column.error())};
+  }
+  if (!at(TokenKind::right_paren)) {
+    return std::unexpected{syntax_error(current())};
+  }
+  advance();
+  return Stmt{CreateIndexStmt{.index = std::move(index.value()),
+                              .table = std::move(table.value()),
+                              .column = std::move(column.value()),
+                              .unique = unique}};
+}
+
+auto Parser::parse_drop() -> SqlResult<Stmt> {
+  advance();
+  const bool table_kind = at_keyword(Keyword::table);
+  if (!table_kind && !at_keyword(Keyword::index)) {
+    return std::unexpected{syntax_error(current())};
+  }
+  advance();
+  bool if_exists = false;
+  if (at_keyword(Keyword::if_)) {
+    advance();
+    if (auto exists = expect_keyword(Keyword::exists); !exists.has_value()) {
+      return std::unexpected{std::move(exists.error())};
+    }
+    if_exists = true;
+  }
+  auto name = expect_identifier();
+  if (!name.has_value()) {
+    return std::unexpected{std::move(name.error())};
+  }
+  if (table_kind) {
+    return Stmt{DropTableStmt{.table = std::move(name.value()), .if_exists = if_exists}};
+  }
+  return Stmt{DropIndexStmt{.index = std::move(name.value()), .if_exists = if_exists}};
+}
+
+auto Parser::parse_alter() -> SqlResult<Stmt> {
+  advance();
+  if (auto table_keyword = expect_keyword(Keyword::table); !table_keyword.has_value()) {
+    return std::unexpected{std::move(table_keyword.error())};
+  }
+  auto table = expect_identifier();
+  if (!table.has_value()) {
+    return std::unexpected{std::move(table.error())};
+  }
+  if (at_keyword(Keyword::add)) {
+    advance();
+    if (auto column_keyword = expect_keyword(Keyword::column); !column_keyword.has_value()) {
+      return std::unexpected{std::move(column_keyword.error())};
+    }
+    auto column = parse_column_definition();
+    if (!column.has_value()) {
+      return std::unexpected{std::move(column.error())};
+    }
+    return Stmt{AlterTableAddColumnStmt{.table = std::move(table.value()),
+                                        .column = std::move(column.value())}};
+  }
+  if (at_keyword(Keyword::drop)) {
+    advance();
+    if (auto column_keyword = expect_keyword(Keyword::column); !column_keyword.has_value()) {
+      return std::unexpected{std::move(column_keyword.error())};
+    }
+    auto column = expect_identifier();
+    if (!column.has_value()) {
+      return std::unexpected{std::move(column.error())};
+    }
+    return Stmt{AlterTableDropColumnStmt{.table = std::move(table.value()),
+                                         .column = std::move(column.value())}};
+  }
+  return std::unexpected{syntax_error(current())};
 }
 
 auto Parser::parse_select() -> SqlResult<SelectStmt> {
