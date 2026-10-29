@@ -47,6 +47,10 @@ constexpr std::uint64_t truncated_tail_prefix = 100;
 static_assert(sizeof(WalPageHeader) == wal_page_header_size);
 static_assert(sizeof(WalLongPageHeader) == wal_long_page_header_size);
 
+TEST(WalFormat, LongHeaderDefaultsToSystemIdentifier) {
+  EXPECT_EQ(WalLongPageHeader{}.sysid, wal_system_identifier);
+}
+
 class TempDirectory {
   public:
   TempDirectory()
@@ -257,20 +261,38 @@ TEST(FileWal, ReopenContinuesAfterLastRecord) {
 
 TEST(FileWal, CrossesSegmentWithoutLosingRecords) {
   TempDirectory directory;
-  FileWal wal{directory.path(), test_timeline, test_segment_size};
   const auto payload = make_record(main_data_size);
-  const LSN first_lsn = wal.insert(payload);
-  const LSN second_lsn = wal.insert(payload);
-  const LSN third_lsn = wal.insert(payload);
-  EXPECT_EQ(first_lsn, wal_page_size + wal_page_header_size);
-  EXPECT_GT(second_lsn, first_lsn);
-  EXPECT_GT(third_lsn, second_lsn);
-  EXPECT_GT(third_lsn / test_segment_size, first_lsn / test_segment_size);
+  const auto payload_size = static_cast<LSN>(payload.main_data.size() + 25);
 
-  wal.flush(third_lsn);
-  EXPECT_EQ(wal.read(first_lsn).record.main_data, payload.main_data);
-  EXPECT_EQ(wal.read(second_lsn).record.main_data, payload.main_data);
-  EXPECT_EQ(wal.read(third_lsn).record.main_data, payload.main_data);
+  LSN first_lsn{invalid_lsn};
+  {
+    FileWal wal{directory.path(), test_timeline, test_segment_size};
+    first_lsn = wal.insert(payload);
+    EXPECT_EQ(first_lsn, wal_page_size + wal_page_header_size);
+    wal.flush(first_lsn);
+  }
+
+  LSN second_lsn{invalid_lsn};
+  {
+    FileWal wal{directory.path(), test_timeline, test_segment_size};
+    second_lsn = wal.insert(payload);
+    EXPECT_EQ(second_lsn, first_lsn + payload_size);
+    wal.flush(second_lsn);
+  }
+
+  LSN third_lsn{invalid_lsn};
+  {
+    FileWal wal{directory.path(), test_timeline, test_segment_size};
+    third_lsn = wal.insert(payload);
+    EXPECT_EQ(third_lsn, test_segment_size + wal_page_header_size);
+    EXPECT_EQ(third_lsn % test_segment_size, wal_page_header_size);
+    wal.flush(third_lsn);
+  }
+
+  FileWal reopened{directory.path(), test_timeline, test_segment_size};
+  EXPECT_EQ(reopened.read(first_lsn).record.main_data, payload.main_data);
+  EXPECT_EQ(reopened.read(second_lsn).record.main_data, payload.main_data);
+  EXPECT_EQ(reopened.read(third_lsn).record.main_data, payload.main_data);
   EXPECT_GE(segment_files(directory.path()).size(), 2U);
 }
 
@@ -428,6 +450,45 @@ TEST(FileWal, CrossesTwoPageBoundaries) {
   const auto again = reopened.read(start);
   EXPECT_EQ(again.record.main_data, record.main_data);
   EXPECT_EQ(again.next_lsn, result.next_lsn);
+}
+
+TEST(FileWal, ReadAtContinuationPageStartThrows) {
+  TempDirectory directory;
+  FileWal wal{directory.path()};
+  const LSN start = wal.insert(make_record(8975));
+  wal.flush(start);
+
+  FileWal reopened{directory.path()};
+  EXPECT_THROW(static_cast<void>(reopened.read(static_cast<LSN>(2 * wal_page_size))),
+               std::runtime_error);
+  EXPECT_THROW(
+      static_cast<void>(reopened.read(static_cast<LSN>(2 * wal_page_size + wal_page_header_size))),
+      std::runtime_error);
+}
+
+TEST(FileWal, SkipsEmptyNormalPage) {
+  TempDirectory directory;
+  FileWal wal{directory.path(), test_timeline, test_segment_size};
+  const auto first = make_record(8143);
+  const auto second = make_record(small_payload_size);
+  const LSN first_lsn = wal.insert(first);
+  const LSN second_lsn = wal.insert(second);
+  EXPECT_EQ(first_lsn, wal_page_size + wal_page_header_size);
+  EXPECT_EQ(second_lsn, test_segment_size + wal_page_header_size);
+  wal.flush(second_lsn);
+
+  const auto files = segment_files(directory.path());
+  ASSERT_EQ(files.size(), 2U);
+  for (std::size_t index = 0; index < sizeof(std::uint32_t); ++index) {
+    write_byte(files.front(),
+               static_cast<std::uint64_t>(wal_page_size + wal_page_header_size + index), 0);
+  }
+
+  FileWal reopened{directory.path(), test_timeline, test_segment_size};
+  const auto result = reopened.read(wal_page_size);
+  EXPECT_EQ(result.record.main_data, second.main_data);
+  EXPECT_EQ(result.next_lsn, second_lsn + second.main_data.size() + 25);
+  EXPECT_EQ(reopened.read(second_lsn).record.main_data, second.main_data);
 }
 
 TEST(FileWal, StartsRecordInContinuationPage) {

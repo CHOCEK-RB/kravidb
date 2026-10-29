@@ -1,6 +1,9 @@
 module;
 
 #if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #else
 #include <fcntl.h>
@@ -13,6 +16,7 @@ module;
 module storage.file_wal;
 
 import std;
+import storage.crc32c;
 import storage.wal;
 
 namespace kravidb::storage {
@@ -63,9 +67,7 @@ constexpr std::uint32_t bytes_per_u32 = 4;
 constexpr std::uint32_t bytes_per_u64 = 8;
 constexpr std::uint32_t byte_mask = 0xFF;
 
-constexpr std::uint32_t crc_polynomial = 0x82F63B78U;
 constexpr std::uint32_t crc_initial = 0xFFFFFFFFU;
-constexpr std::size_t crc_table_size = 256;
 
 constexpr std::size_t segment_parts = 3;
 constexpr std::size_t hex_digits_per_part = 8;
@@ -201,28 +203,6 @@ auto decode_long_page_header(std::span<const std::byte> bytes) -> WalLongPageHea
                            .sysid = read_u64(bytes, long_page_sysid_offset),
                            .segment_size = read_u32(bytes, long_page_segment_size_offset),
                            .block_size = read_u32(bytes, long_page_block_size_offset)};
-}
-
-consteval auto make_crc_table() -> std::array<std::uint32_t, crc_table_size> {
-  std::array<std::uint32_t, crc_table_size> table{};
-  for (std::size_t index = 0; index < table.size(); ++index) {
-    auto crc = static_cast<std::uint32_t>(index);
-    for (std::uint32_t bit = 0; bit < bits_per_byte; ++bit) {
-      crc = (crc & 1U) != 0U ? (crc >> 1U) ^ crc_polynomial : crc >> 1U;
-    }
-    table.at(index) = crc;
-  }
-  return table;
-}
-
-inline constexpr auto crc_table = make_crc_table();
-
-auto crc32c_update(std::uint32_t crc, std::span<const std::byte> bytes) -> std::uint32_t {
-  for (const std::byte item : bytes) {
-    const auto index = (crc ^ std::to_integer<std::uint32_t>(item)) & byte_mask;
-    crc = crc_table.at(index) ^ (crc >> bits_per_byte);
-  }
-  return crc;
 }
 
 auto compute_crc(std::span<const std::byte> bytes) -> std::uint32_t {
