@@ -100,6 +100,16 @@ auto read_u32(std::span<const std::byte> bytes, std::size_t offset) -> std::uint
   return value;
 }
 
+auto read_u64(std::span<const std::byte> bytes, std::size_t offset) -> std::uint64_t {
+  std::uint64_t value = 0;
+  std::uint32_t shift = 0;
+  for (const std::byte item : bytes.subspan(offset, bytes_per_u64)) {
+    value |= static_cast<std::uint64_t>(std::to_integer<std::uint8_t>(item)) << shift;
+    shift += bits_per_byte;
+  }
+  return value;
+}
+
 auto append_u16(std::vector<std::byte>& bytes, std::uint16_t value) -> void {
   for (std::uint32_t index = 0; index < bytes_per_u16; ++index) {
     bytes.push_back(std::byte{static_cast<std::uint8_t>(value & byte_mask)});
@@ -126,6 +136,71 @@ auto store_u32(std::vector<std::byte>& bytes, std::size_t offset, std::uint32_t 
     bytes.at(offset + index) = std::byte{static_cast<std::uint8_t>(value & byte_mask)};
     value >>= bits_per_byte;
   }
+}
+
+constexpr std::size_t page_magic_offset = 0;
+constexpr std::size_t page_info_offset = 2;
+constexpr std::size_t page_timeline_offset = 4;
+constexpr std::size_t page_addr_offset = 8;
+constexpr std::size_t page_rem_len_offset = 16;
+constexpr std::size_t page_reserved_offset = 20;
+constexpr std::size_t long_page_sysid_offset = 24;
+constexpr std::size_t long_page_segment_size_offset = 32;
+constexpr std::size_t long_page_block_size_offset = 36;
+constexpr std::uint16_t page_info_known =
+    static_cast<std::uint16_t>(wal_page_info_long_header | wal_page_info_continuation);
+
+auto page_start(LSN lsn) -> LSN {
+  return lsn - (lsn % static_cast<LSN>(wal_page_size));
+}
+
+auto encode_page_header(const WalPageHeader& header)
+    -> std::array<std::byte, wal_page_header_size> {
+  std::vector<std::byte> bytes;
+  bytes.reserve(wal_page_header_size);
+  append_u16(bytes, header.magic);
+  append_u16(bytes, header.info);
+  append_u32(bytes, header.timeline);
+  append_u64(bytes, header.pageaddr);
+  append_u32(bytes, header.rem_len);
+  append_u32(bytes, header.reserved);
+  std::array<std::byte, wal_page_header_size> result{};
+  std::ranges::copy(bytes, result.begin());
+  return result;
+}
+
+auto decode_page_header(std::span<const std::byte> bytes) -> WalPageHeader {
+  if (bytes.size() < wal_page_header_size) {
+    throw std::invalid_argument{"FileWal: truncated page header"};
+  }
+  return WalPageHeader{.magic = read_u16(bytes, page_magic_offset),
+                       .info = read_u16(bytes, page_info_offset),
+                       .timeline = read_u32(bytes, page_timeline_offset),
+                       .pageaddr = read_u64(bytes, page_addr_offset),
+                       .rem_len = read_u32(bytes, page_rem_len_offset),
+                       .reserved = read_u32(bytes, page_reserved_offset)};
+}
+
+auto encode_long_page_header(const WalLongPageHeader& header)
+    -> std::array<std::byte, wal_long_page_header_size> {
+  const auto page = encode_page_header(header.page);
+  std::vector<std::byte> bytes(page.begin(), page.end());
+  append_u64(bytes, header.sysid);
+  append_u32(bytes, header.segment_size);
+  append_u32(bytes, header.block_size);
+  std::array<std::byte, wal_long_page_header_size> result{};
+  std::ranges::copy(bytes, result.begin());
+  return result;
+}
+
+auto decode_long_page_header(std::span<const std::byte> bytes) -> WalLongPageHeader {
+  if (bytes.size() < wal_long_page_header_size) {
+    throw std::invalid_argument{"FileWal: truncated long page header"};
+  }
+  return WalLongPageHeader{.page = decode_page_header(bytes.first(wal_page_header_size)),
+                           .sysid = read_u64(bytes, long_page_sysid_offset),
+                           .segment_size = read_u32(bytes, long_page_segment_size_offset),
+                           .block_size = read_u32(bytes, long_page_block_size_offset)};
 }
 
 consteval auto make_crc_table() -> std::array<std::uint32_t, crc_table_size> {
@@ -429,7 +504,7 @@ class FileWal::Impl {
         pending_, [upto](const PendingRecord& pending) { return pending.start <= upto; });
   }
 
-  [[nodiscard]] auto read(LSN from) -> WalRecord {
+  [[nodiscard]] auto read(LSN from) -> WalReadResult {
     std::lock_guard lock{mutex_};
     return read_locked(from);
   }
@@ -497,6 +572,439 @@ class FileWal::Impl {
     LSN end{invalid_lsn};
   };
 
+  class TruncatedRecord : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+  };
+
+  struct PeekResult {
+    enum class Kind { record, padding, truncated };
+
+    Kind kind{Kind::padding};
+    std::uint32_t total{0};
+  };
+
+  struct FramedRecord {
+    LSN start{invalid_lsn};
+    LSN end{invalid_lsn};
+    std::vector<std::byte> bytes;
+  };
+
+  struct ReadPrefix {
+    std::vector<std::byte> bytes;
+    LSN next{invalid_lsn};
+  };
+
+  [[nodiscard]] static auto continuation_flag(const WalPageHeader& header) -> bool {
+    return (header.info & wal_page_info_continuation) != 0;
+  }
+
+  [[nodiscard]] static auto long_header_flag(const WalPageHeader& header) -> bool {
+    return (header.info & wal_page_info_long_header) != 0;
+  }
+
+  auto validate_record_total(std::uint32_t total) const -> void {
+    if (total < record_header_size || total > segment_size_) {
+      throw std::runtime_error{"FileWal: invalid record length"};
+    }
+  }
+
+  auto validate_page_header(const WalPageHeader& header, LSN pageaddr, bool allow_long) const
+      -> void {
+    if (header.magic != wal_page_magic) {
+      throw std::runtime_error{"FileWal: invalid page magic"};
+    }
+    if (header.reserved != 0) {
+      throw std::runtime_error{"FileWal: invalid page reserved field"};
+    }
+    const auto unknown =
+        static_cast<std::uint16_t>(header.info & static_cast<std::uint16_t>(~page_info_known));
+    if (unknown != 0) {
+      throw std::runtime_error{"FileWal: unknown page flags"};
+    }
+    if (header.timeline != timeline_) {
+      throw std::runtime_error{"FileWal: page timeline mismatch"};
+    }
+    if (header.pageaddr != pageaddr) {
+      throw std::runtime_error{"FileWal: page address mismatch"};
+    }
+    const bool long_header = long_header_flag(header);
+    const bool continuation = continuation_flag(header);
+    if (long_header && continuation) {
+      throw std::runtime_error{"FileWal: page is both long and continuation"};
+    }
+    if (long_header) {
+      if (!allow_long || pageaddr != 0) {
+        throw std::runtime_error{"FileWal: long page header in a data page"};
+      }
+      if (header.rem_len != 0) {
+        throw std::runtime_error{"FileWal: long page header has remaining data"};
+      }
+    } else if (continuation) {
+      if (header.rem_len == 0) {
+        throw std::runtime_error{"FileWal: empty continuation page header"};
+      }
+    } else if (header.rem_len != 0) {
+      throw std::runtime_error{"FileWal: unexpected remaining page length"};
+    }
+  }
+
+  auto validate_long_page_header(const WalLongPageHeader& header) const -> void {
+    validate_page_header(header.page, 0, true);
+    if (!long_header_flag(header.page)) {
+      throw std::runtime_error{"FileWal: missing long page header flag"};
+    }
+    if (header.sysid != wal_system_identifier) {
+      throw std::runtime_error{"FileWal: system identifier mismatch"};
+    }
+    if (header.segment_size != segment_size_) {
+      throw std::runtime_error{"FileWal: segment size mismatch"};
+    }
+    if (header.block_size != wal_page_size) {
+      throw std::runtime_error{"FileWal: block size mismatch"};
+    }
+  }
+
+  auto read_stream(LSN offset, std::span<std::byte> out) -> void {
+    auto position = offset;
+    auto remaining = out;
+    while (!remaining.empty()) {
+      const auto buffer_end = flushed_ + static_cast<LSN>(buffer_.size());
+      if (position >= flushed_ && position < buffer_end) {
+        const auto available = static_cast<std::size_t>(buffer_end - position);
+        const auto count = std::min(remaining.size(), available);
+        const auto source = std::span<const std::byte>{buffer_}.subspan(
+            static_cast<std::size_t>(position - flushed_), count);
+        std::ranges::copy(source, remaining.begin());
+        remaining = remaining.subspan(count);
+        position += static_cast<LSN>(count);
+        continue;
+      }
+
+      const auto segment = position / static_cast<LSN>(segment_size_);
+      const auto segment_offset = static_cast<std::size_t>(position % segment_size_);
+      auto* file = open_segment(segment, false);
+      if (file == nullptr) {
+        throw std::runtime_error{"FileWal: segment file is missing"};
+      }
+      const auto count = std::min(remaining.size(), segment_size_ - segment_offset);
+      file->read_at(remaining.first(count), segment_offset);
+      remaining = remaining.subspan(count);
+      position += static_cast<LSN>(count);
+    }
+  }
+
+  [[nodiscard]] auto read_page_header(LSN pageaddr) -> WalPageHeader {
+    std::array<std::byte, wal_page_header_size> bytes{};
+    read_stream(pageaddr, bytes);
+    return decode_page_header(bytes);
+  }
+
+  // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+  [[nodiscard]] auto read_prefix(LSN start, std::size_t count,
+                                 std::optional<std::uint32_t> expected_total, LSN limit)
+      -> ReadPrefix {
+    std::vector<std::byte> bytes;
+    bytes.reserve(count);
+    auto position = start;
+    std::size_t collected = 0;
+    bool first = true;
+    const auto segment = start / static_cast<LSN>(segment_size_);
+    while (collected < count) {
+      const auto page = page_start(position);
+      if (page / static_cast<LSN>(segment_size_) != segment) {
+        throw std::runtime_error{"FileWal: record crosses a segment boundary"};
+      }
+      if (page + static_cast<LSN>(wal_page_header_size) > limit) {
+        throw TruncatedRecord{"FileWal: truncated page header"};
+      }
+      const auto header = read_page_header(page);
+      if (header.magic == 0) {
+        throw TruncatedRecord{"FileWal: missing page header"};
+      }
+      validate_page_header(header, page, page == 0);
+      const bool continuation = continuation_flag(header);
+      if (first) {
+        if (position < page + static_cast<LSN>(wal_page_header_size)) {
+          throw std::runtime_error{"FileWal: record starts inside a page header"};
+        }
+        if (position == page + static_cast<LSN>(wal_page_header_size) && continuation) {
+          throw std::runtime_error{"FileWal: record starts in a continuation page"};
+        }
+      } else {
+        if (position != page) {
+          throw std::runtime_error{"FileWal: record does not continue at a page boundary"};
+        }
+        if (!continuation) {
+          throw std::runtime_error{"FileWal: missing continuation page"};
+        }
+        if (expected_total.has_value() &&
+            header.rem_len != expected_total.value() - static_cast<std::uint32_t>(collected)) {
+          throw std::runtime_error{"FileWal: invalid remaining length"};
+        }
+      }
+      if (position == page) {
+        position += static_cast<LSN>(wal_page_header_size);
+      }
+      const auto page_end = page + static_cast<LSN>(wal_page_size);
+      if (position >= page_end) {
+        throw std::runtime_error{"FileWal: empty page payload"};
+      }
+      const auto available = static_cast<std::size_t>(page_end - position);
+      const auto chunk = std::min(count - collected, available);
+      if (position + static_cast<LSN>(chunk) > limit) {
+        throw TruncatedRecord{"FileWal: truncated record payload"};
+      }
+      const auto old_size = bytes.size();
+      bytes.resize(old_size + chunk);
+      read_stream(position, std::span<std::byte>{bytes}.subspan(old_size, chunk));
+      position += static_cast<LSN>(chunk);
+      collected += chunk;
+      first = false;
+      if (collected < count && position != page_end) {
+        if (position >= limit) {
+          throw TruncatedRecord{"FileWal: truncated record payload"};
+        }
+        throw std::runtime_error{"FileWal: record does not fill the page"};
+      }
+    }
+    return ReadPrefix{.bytes = std::move(bytes), .next = position};
+  }
+
+  // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+  [[nodiscard]] auto walk_record(LSN start, std::uint32_t total, LSN limit) -> LSN {
+    auto position = start;
+    std::size_t remaining = total;
+    bool first = true;
+    const auto segment = start / static_cast<LSN>(segment_size_);
+    while (remaining > 0) {
+      const auto page = page_start(position);
+      if (page / static_cast<LSN>(segment_size_) != segment) {
+        throw std::runtime_error{"FileWal: record crosses a segment boundary"};
+      }
+      if (page + static_cast<LSN>(wal_page_header_size) > limit) {
+        throw TruncatedRecord{"FileWal: truncated page header"};
+      }
+      const auto header = read_page_header(page);
+      if (header.magic == 0) {
+        throw TruncatedRecord{"FileWal: missing page header"};
+      }
+      validate_page_header(header, page, page == 0);
+      const bool continuation = continuation_flag(header);
+      if (first) {
+        if (position < page + static_cast<LSN>(wal_page_header_size)) {
+          throw std::runtime_error{"FileWal: record starts inside a page header"};
+        }
+        if (position == page + static_cast<LSN>(wal_page_header_size) && continuation) {
+          throw std::runtime_error{"FileWal: record starts in a continuation page"};
+        }
+      } else {
+        if (position != page) {
+          throw std::runtime_error{"FileWal: record does not continue at a page boundary"};
+        }
+        if (!continuation) {
+          throw std::runtime_error{"FileWal: missing continuation page"};
+        }
+        if (header.rem_len != static_cast<std::uint32_t>(remaining)) {
+          throw std::runtime_error{"FileWal: invalid remaining length"};
+        }
+      }
+      if (position == page) {
+        position += static_cast<LSN>(wal_page_header_size);
+      }
+      const auto page_end = page + static_cast<LSN>(wal_page_size);
+      if (position >= page_end) {
+        throw std::runtime_error{"FileWal: empty page payload"};
+      }
+      const auto available = static_cast<std::size_t>(page_end - position);
+      const auto chunk = std::min(remaining, available);
+      if (position + static_cast<LSN>(chunk) > limit) {
+        throw TruncatedRecord{"FileWal: truncated record payload"};
+      }
+      position += static_cast<LSN>(chunk);
+      remaining -= chunk;
+      first = false;
+      if (remaining > 0 && position != page_end) {
+        if (position >= limit) {
+          throw TruncatedRecord{"FileWal: truncated record payload"};
+        }
+        throw std::runtime_error{"FileWal: record does not fill the page"};
+      }
+    }
+    return position;
+  }
+
+  [[nodiscard]] auto peek_total(LSN from, LSN limit) -> PeekResult {
+    const auto page = page_start(from);
+    const auto header = read_page_header(page);
+    if (header.magic == 0) {
+      return PeekResult{.kind = PeekResult::Kind::truncated};
+    }
+    validate_page_header(header, page, page == 0);
+    if (from < page + static_cast<LSN>(wal_page_header_size)) {
+      throw std::runtime_error{"FileWal: record starts inside a page header"};
+    }
+    if (from == page + static_cast<LSN>(wal_page_header_size) && continuation_flag(header)) {
+      throw std::runtime_error{"FileWal: record starts in a continuation page"};
+    }
+    const auto page_end = page + static_cast<LSN>(wal_page_size);
+    const auto available = static_cast<std::size_t>(page_end - from);
+
+    if (from + static_cast<LSN>(bytes_per_u32) > limit) {
+      const auto tail_size = static_cast<std::size_t>(std::min<LSN>(available, limit - from));
+      std::array<std::byte, bytes_per_u32 - 1> tail{};
+      read_stream(from, std::span<std::byte>{tail}.first(tail_size));
+      const bool nonzero =
+          std::ranges::any_of(tail, [](std::byte item) { return item != std::byte{0}; });
+      return PeekResult{.kind = nonzero ? PeekResult::Kind::truncated : PeekResult::Kind::padding};
+    }
+
+    if (available >= bytes_per_u32) {
+      std::array<std::byte, bytes_per_u32> bytes{};
+      read_stream(from, bytes);
+      const auto total = read_u32(bytes, 0);
+      if (total == 0) {
+        return PeekResult{.kind = PeekResult::Kind::padding};
+      }
+      validate_record_total(total);
+      return PeekResult{.kind = PeekResult::Kind::record, .total = total};
+    }
+
+    std::array<std::byte, bytes_per_u32 - 1> tail{};
+    read_stream(from, std::span<std::byte>{tail}.first(available));
+    const bool nonzero =
+        std::ranges::any_of(tail, [](std::byte item) { return item != std::byte{0}; });
+    const auto next = page_end;
+    bool next_continuation = false;
+    if (next < limit) {
+      const auto next_header = read_page_header(next);
+      if (next_header.magic != 0) {
+        validate_page_header(next_header, next, next == 0);
+        next_continuation = continuation_flag(next_header);
+      }
+    }
+    if (!nonzero && !next_continuation) {
+      return PeekResult{.kind = PeekResult::Kind::padding};
+    }
+    try {
+      const auto prefix = read_prefix(from, bytes_per_u32, std::nullopt, limit);
+      const auto total = read_u32(prefix.bytes, 0);
+      if (total == 0) {
+        return PeekResult{.kind = PeekResult::Kind::padding};
+      }
+      validate_record_total(total);
+      return PeekResult{.kind = PeekResult::Kind::record, .total = total};
+    } catch (const TruncatedRecord&) {
+      return PeekResult{.kind = PeekResult::Kind::truncated};
+    }
+  }
+
+  [[nodiscard]] auto locate_record_start(LSN from) -> LSN {
+    auto position = from;
+    while (true) {
+      if (position >= inserted_) {
+        throw std::out_of_range{"FileWal: LSN does not name a record"};
+      }
+      const auto page = page_start(position);
+      const auto header = read_page_header(page);
+      if (header.magic == 0) {
+        if (position != page) {
+          throw std::runtime_error{"FileWal: missing page header"};
+        }
+        position = page + static_cast<LSN>(wal_page_size);
+        continue;
+      }
+      validate_page_header(header, page, page == 0);
+      const bool continuation = continuation_flag(header);
+      if (position == page) {
+        if (continuation) {
+          throw std::runtime_error{"FileWal: record starts in a continuation page"};
+        }
+        position += static_cast<LSN>(wal_page_header_size);
+      } else {
+        if (position < page + static_cast<LSN>(wal_page_header_size)) {
+          throw std::runtime_error{"FileWal: LSN points inside a page header"};
+        }
+        if (position == page + static_cast<LSN>(wal_page_header_size) && continuation) {
+          throw std::runtime_error{"FileWal: record starts in a continuation page"};
+        }
+      }
+      const auto peek = peek_total(position, inserted_);
+      if (peek.kind == PeekResult::Kind::padding) {
+        position = page + static_cast<LSN>(wal_page_size);
+        continue;
+      }
+      if (peek.kind == PeekResult::Kind::truncated) {
+        throw std::runtime_error{"FileWal: truncated record"};
+      }
+      return position;
+    }
+  }
+
+  [[nodiscard]] auto frame_record(LSN start, std::span<const std::byte> record) const
+      -> FramedRecord {
+    const bool starts_page = start == page_start(start);
+    std::vector<std::byte> bytes;
+    auto position = start;
+    std::size_t consumed = 0;
+    bool first = true;
+    while (consumed < record.size()) {
+      const auto page = page_start(position);
+      if (position == page) {
+        const WalPageHeader header{
+            .magic = wal_page_magic,
+            .info = static_cast<std::uint16_t>(first ? 0 : wal_page_info_continuation),
+            .timeline = timeline_,
+            .pageaddr = page,
+            .rem_len = static_cast<std::uint32_t>(first ? 0 : record.size() - consumed),
+            .reserved = 0};
+        const auto header_bytes = encode_page_header(header);
+        bytes.insert(bytes.end(), header_bytes.begin(), header_bytes.end());
+        position += static_cast<LSN>(wal_page_header_size);
+      }
+      const auto page_end = page + static_cast<LSN>(wal_page_size);
+      if (position >= page_end) {
+        throw std::runtime_error{"FileWal: frame does not fit the page"};
+      }
+      const auto available = static_cast<std::size_t>(page_end - position);
+      const auto chunk = std::min(record.size() - consumed, available);
+      const auto begin = record.begin() + static_cast<std::ptrdiff_t>(consumed);
+      bytes.insert(bytes.end(), begin, begin + static_cast<std::ptrdiff_t>(chunk));
+      consumed += chunk;
+      position += static_cast<LSN>(chunk);
+      first = false;
+    }
+    const auto record_start = starts_page ? start + static_cast<LSN>(wal_page_header_size) : start;
+    return FramedRecord{.start = record_start, .end = position, .bytes = std::move(bytes)};
+  }
+
+  [[nodiscard]] auto segment_end_for(LSN lsn) const -> LSN {
+    const auto offset = lsn % static_cast<LSN>(segment_size_);
+    return lsn + (static_cast<LSN>(segment_size_) - offset);
+  }
+
+  auto ensure_long_header(detail::OsFile& file) -> void {
+    std::array<std::byte, wal_long_page_header_size> bytes{};
+    file.read_at(bytes, 0);
+    const auto page = decode_page_header(bytes);
+    if (page.magic == 0) {
+      const WalLongPageHeader header{.page = {.magic = wal_page_magic,
+                                              .info = wal_page_info_long_header,
+                                              .timeline = timeline_,
+                                              .pageaddr = 0,
+                                              .rem_len = 0,
+                                              .reserved = 0},
+                                     .sysid = wal_system_identifier,
+                                     .segment_size = static_cast<std::uint32_t>(segment_size_),
+                                     .block_size = static_cast<std::uint32_t>(wal_page_size)};
+      const auto header_bytes = encode_long_page_header(header);
+      file.write_at(header_bytes, 0);
+      return;
+    }
+    const auto header = decode_long_page_header(bytes);
+    validate_long_page_header(header);
+  }
+
   [[nodiscard]] auto segment_filename(std::uint64_t index) const -> std::string {
     return std::format("{:08x}{:08x}{:08x}", timeline_,
                        static_cast<std::uint32_t>(index >> bits_per_u32),
@@ -521,6 +1029,9 @@ class FileWal::Impl {
       const auto size = existed ? std::filesystem::file_size(path) : std::uintmax_t{0};
       if (size < segment_size_) {
         file->truncate(segment_size_);
+      }
+      if (index == 0) {
+        ensure_long_header(*file);
       }
       if (!existed) {
         detail::fsync_directory(directory_);
@@ -548,32 +1059,127 @@ class FileWal::Impl {
 
     LSN end = wal_page_size;
     LSN last_start = invalid_lsn;
-    if (!segments.empty()) {
-      const auto first = segments.front();
-      end = first * static_cast<LSN>(segment_size_) + (first == 0 ? wal_page_size : LSN{0});
+    if (segments.empty()) {
+      inserted_ = end;
+      flushed_ = end;
+      last_prev_ = last_start;
+      return;
     }
 
+    const auto first = segments.front();
+    end = first * static_cast<LSN>(segment_size_) + (first == 0 ? wal_page_size : LSN{0});
+
+    if (first == 0) {
+      auto* file = open_segment(0, false);
+      if (file == nullptr) {
+        throw std::runtime_error{"FileWal: missing first segment"};
+      }
+      const auto path = directory_ / segment_filename(0);
+      const auto file_size = std::filesystem::file_size(path);
+      std::array<std::byte, wal_long_page_header_size> bytes{};
+      file->read_at(bytes, 0);
+      const auto page = decode_page_header(bytes);
+      if (page.magic == 0) {
+        if (file_size >= static_cast<std::uintmax_t>(wal_page_size) + bytes_per_u32) {
+          std::array<std::byte, bytes_per_u32> first_bytes{};
+          file->read_at(first_bytes, wal_page_size);
+          const bool nonzero =
+              std::ranges::any_of(first_bytes, [](std::byte item) { return item != std::byte{0}; });
+          if (nonzero) {
+            throw std::runtime_error{"FileWal: unsupported flat WAL format"};
+          }
+        }
+      } else {
+        const auto long_header = decode_long_page_header(bytes);
+        validate_long_page_header(long_header);
+      }
+    }
+
+    bool stop = false;
     for (const auto index : segments) {
+      if (stop) {
+        break;
+      }
       auto* file = open_segment(index, false);
       if (file == nullptr) {
         continue;
       }
       const auto segment_start = index * static_cast<LSN>(segment_size_);
-      const auto segment_limit = segment_start + static_cast<LSN>(segment_size_);
+      const auto path = directory_ / segment_filename(index);
+      const auto file_size = std::filesystem::file_size(path);
+      const auto stored = static_cast<LSN>(
+          std::min<std::uintmax_t>(segment_size_, static_cast<std::uintmax_t>(file_size)));
+      const auto segment_limit = segment_start + stored;
       auto position = segment_start + (index == 0 ? wal_page_size : LSN{0});
-      while (position + record_header_size <= segment_limit) {
-        std::array<std::byte, record_header_size> header{};
-        file->read_at(header, position - segment_start);
-        const auto total = read_u32(header, record_total_len_offset);
-        if (total == 0) {
+      while (position < segment_limit) {
+        const auto page = page_start(position);
+        if (page + static_cast<LSN>(wal_page_header_size) > segment_limit) {
+          const auto available = static_cast<std::size_t>(segment_limit - position);
+          std::array<std::byte, wal_page_header_size> bytes{};
+          if (available > 0) {
+            file->read_at(std::span<std::byte>{bytes}.first(available),
+                          static_cast<std::size_t>(position - segment_start));
+          }
+          const bool nonzero =
+              std::ranges::any_of(bytes, [](std::byte item) { return item != std::byte{0}; });
+          if (nonzero) {
+            end = position;
+            stop = true;
+          }
           break;
         }
-        if (total < record_header_size || position + total > segment_limit) {
-          throw std::runtime_error{"FileWal: invalid record length"};
+
+        const auto header = read_page_header(page);
+        if (header.magic == 0) {
+          if (position != page) {
+            throw std::runtime_error{"FileWal: missing page header"};
+          }
+          break;
         }
-        last_start = position;
-        position += total;
-        end = position;
+        validate_page_header(header, page, page == 0);
+        const bool continuation = continuation_flag(header);
+        if (position == page) {
+          if (continuation) {
+            throw std::runtime_error{"FileWal: record starts in a continuation page"};
+          }
+          position += static_cast<LSN>(wal_page_header_size);
+        } else {
+          if (position < page + static_cast<LSN>(wal_page_header_size)) {
+            throw std::runtime_error{"FileWal: record starts inside a page header"};
+          }
+          if (position == page + static_cast<LSN>(wal_page_header_size) && continuation) {
+            throw std::runtime_error{"FileWal: record starts in a continuation page"};
+          }
+        }
+
+        PeekResult peek;
+        try {
+          peek = peek_total(position, segment_limit);
+        } catch (const TruncatedRecord&) {
+          end = position;
+          stop = true;
+          break;
+        }
+        if (peek.kind == PeekResult::Kind::padding) {
+          position = page + static_cast<LSN>(wal_page_size);
+          continue;
+        }
+        if (peek.kind == PeekResult::Kind::truncated) {
+          end = position;
+          stop = true;
+          break;
+        }
+
+        try {
+          const auto next = walk_record(position, peek.total, segment_limit);
+          last_start = position;
+          position = next;
+          end = position;
+        } catch (const TruncatedRecord&) {
+          end = position;
+          stop = true;
+          break;
+        }
       }
     }
 
@@ -665,18 +1271,25 @@ class FileWal::Impl {
 
   auto insert_locked(const WalRecord& record) -> LSN {
     const auto bytes = encode_record_locked(record);
-    const auto offset = inserted_ % static_cast<LSN>(segment_size_);
-    const auto segment_end = inserted_ + (static_cast<LSN>(segment_size_) - offset);
-    if (inserted_ + static_cast<LSN>(bytes.size()) > segment_end) {
-      pad_to(segment_end);
+    auto start = inserted_;
+    auto segment_end = segment_end_for(start);
+    auto framed = frame_record(start, bytes);
+    if (framed.end > segment_end) {
+      const auto next_start = segment_end;
+      const auto next_end = next_start + static_cast<LSN>(segment_size_);
+      auto candidate = frame_record(next_start, bytes);
+      if (candidate.end > next_end) {
+        throw std::length_error{"FileWal: record does not fit in a segment"};
+      }
+      pad_to(next_start);
+      framed = std::move(candidate);
     }
-    const auto start = inserted_;
-    buffer_.insert(buffer_.end(), bytes.begin(), bytes.end());
-    pending_.push_back(
-        PendingRecord{.start = start, .end = start + static_cast<LSN>(bytes.size())});
-    inserted_ = start + static_cast<LSN>(bytes.size());
-    last_prev_ = start;
-    return start;
+
+    buffer_.insert(buffer_.end(), framed.bytes.begin(), framed.bytes.end());
+    pending_.push_back(PendingRecord{.start = framed.start, .end = framed.end});
+    inserted_ = framed.end;
+    last_prev_ = framed.start;
+    return framed.start;
   }
 
   auto flush_locked(LSN upto) -> void {
@@ -715,45 +1328,24 @@ class FileWal::Impl {
                   [this](const PendingRecord& pending) { return pending.end <= flushed_; });
   }
 
-  [[nodiscard]] auto read_locked(LSN from) -> WalRecord {
+  [[nodiscard]] auto read_locked(LSN from) -> WalReadResult {
     if (from < wal_page_size || from >= inserted_) {
       throw std::out_of_range{"FileWal: LSN does not name a record"};
     }
 
-    if (from >= flushed_) {
-      const auto offset = static_cast<std::size_t>(from - flushed_);
-      const auto buffer = std::span<const std::byte>{buffer_};
-      if (offset + record_header_size > buffer.size()) {
-        throw std::runtime_error{"FileWal: truncated record"};
-      }
-      const auto total = read_u32(buffer, offset + record_total_len_offset);
-      if (total < record_header_size || offset + total > buffer.size()) {
-        throw std::runtime_error{"FileWal: invalid record length"};
-      }
-      read_storage_.assign(buffer.begin() + static_cast<std::ptrdiff_t>(offset),
-                           buffer.begin() + static_cast<std::ptrdiff_t>(offset + total));
-    } else {
-      const auto segment = from / static_cast<LSN>(segment_size_);
-      const auto offset = from % static_cast<LSN>(segment_size_);
-      auto* file = open_segment(segment, false);
-      if (file == nullptr) {
-        throw std::runtime_error{"FileWal: segment file is missing"};
-      }
-      std::array<std::byte, record_header_size> header{};
-      file->read_at(header, offset);
-      const auto total = read_u32(header, record_total_len_offset);
-      if (total < record_header_size || offset + total > static_cast<LSN>(segment_size_)) {
-        throw std::runtime_error{"FileWal: invalid record length"};
-      }
-      read_storage_.resize(total);
-      file->read_at(std::span<std::byte>{read_storage_}, offset);
+    const auto start = locate_record_start(from);
+    const auto peek = peek_total(start, inserted_);
+    if (peek.kind != PeekResult::Kind::record) {
+      throw std::runtime_error{"FileWal: LSN does not name a record"};
     }
-
+    auto prefix = read_prefix(start, peek.total, peek.total, inserted_);
+    read_storage_ = std::move(prefix.bytes);
     const auto bytes = std::span<const std::byte>{read_storage_};
     if (read_u32(bytes, record_crc_offset) != compute_crc(bytes)) {
       throw std::runtime_error{"FileWal: record checksum mismatch"};
     }
-    return decode_record(bytes);
+    auto record = decode_record(bytes);
+    return WalReadResult{.record = std::move(record), .next_lsn = prefix.next};
   }
 
   [[nodiscard]] auto decode_record(std::span<const std::byte> bytes) const -> WalRecord {
@@ -866,7 +1458,7 @@ auto FileWal::needs_flush(LSN upto) const -> bool {
   return impl_->needs_flush(upto);
 }
 
-auto FileWal::read(LSN from) -> WalRecord {
+auto FileWal::read(LSN from) -> WalReadResult {
   return impl_->read(from);
 }
 
