@@ -1,28 +1,85 @@
 /// \file
-/// \brief Preludio publico del motor de almacenamiento kravidb.
+/// \brief Public prelude of the kravidb storage engine.
 ///
-/// Re-exporta los contratos y las implementaciones para que un consumidor
-/// necesite unicamente `import kravidb;`.
+/// Re-exports the contracts and implementations so a consumer only needs
+/// `import kravidb;`.
 
 export module kravidb;
 
-/// \brief Contrato de almacenamiento de registros paginado (`RecordStore`).
+/// \brief Paged record storage contract (`RecordStore`).
 export import storage.record_store;
 
-/// \brief Implementacion paginada del almacenamiento (`PageManager`).
+/// \brief Paged implementation of the storage (`PageManager`).
 export import storage.page_manager;
 
-/// \brief Fachada de tabla que combina registros e indice (`Table`).
+/// \brief Table facade that combines records and index (`Table`).
 export import storage.table;
 
-/// \brief Definicion de columnas y esquema relacional (`Schema`, `ColumnDef`).
+/// \brief Column and relational schema definition (`Schema`, `ColumnDef`).
 export import storage.schema;
 
-/// \brief Fachada que ensambla los componentes del motor (`StorageEngine`).
+/// \brief Facade that assembles the engine components (`StorageEngine`).
 export import storage.engine;
 
-/// \brief Contrato de indice (`Index`).
+/// \brief Index contract (`Index`).
 export import index.index;
 
-/// \brief Implementacion de arbol B (`BTree`).
+/// \brief B-tree implementation (`BTree`).
 export import index.btree;
+
+/// \brief Relation file contract (`RelationFile`).
+export import storage.relation_file;
+
+/// \brief File-backed relation storage with segments (`FileRelationFile`).
+export import storage.file_relation_file;
+
+/// \brief 8 KiB page layout (`Page`, `PageHeader`, `ItemId`).
+export import storage.page;
+
+/// \brief Physical heap tuple (`HeapTuple`, `HeapTupleHeader`, `ItemPointerData`).
+export import storage.heap_tuple;
+
+/// \brief Page source contract and in-memory adapter (`PageSource`, `MemoryPageSource`).
+export import storage.page_source;
+
+/// \brief Buffer pool contract (`BufferPool`, `PageGuard`, `BufferTag`).
+export import storage.buffer_pool;
+
+/// \brief WAL contract and no-op adapter (`Wal`, `NoopWal`).
+export import storage.wal;
+
+/// \brief File-backed write-ahead log (`FileWal`).
+export import storage.file_wal;
+
+/// \brief Data directory, control file and instance lock (`DataDirectory`).
+export import storage.control;
+
+/// \brief Statement transaction contract (`TransactionManager`, `Transaction`).
+export import storage.transaction;
+
+/// \brief Catalog contract and in-memory adapter (`Catalog`, `SchemaCatalog`).
+export import storage.catalog;
+
+/// \brief In-memory index adapter (`MemoryBTree`).
+export import index.memory_btree;
+
+/// \brief SQL source position (`SourcePosition`).
+export import sql.source;
+
+/// \brief SQL error value and result alias (`SqlError`, `SqlResult`).
+export import sql.error;
+
+/// \brief Typed SQL abstract syntax tree (`Stmt`, `Expr`, `Literal`).
+export import sql.ast;
+
+/// \brief SQL tokens and lexer (`Token`, `TokenKind`, `Keyword`).
+export import sql.lexer;
+
+/// \brief SELECT parser (`parse`, `parse_tokens`).
+export import sql.parser;
+
+/// \brief Analyzed query model (`Query`, `TypedExpr`, `SqlType`).
+export import sql.query;
+
+/// \brief SELECT analyzer and front-end entry point (`analyze`, `prepare_query`).
+export import sql.analyzer;

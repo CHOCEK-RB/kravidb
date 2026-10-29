@@ -15,9 +15,9 @@
     lastSplitOccurred?: boolean
     promotedKey?: number | null
     newRoot?: boolean
-    /** Velocidad de reproducción: escala las animaciones de split/crecimiento. */
+    /** Playback speed: scales the split/growth animations. */
     speed?: number
-    /** Grado mínimo del árbol: define el máximo de claves por nodo (2t-1). */
+    /** Minimum tree degree: sets the maximum keys per node (2t-1). */
     degree?: number
     isSearching?: boolean
     searchPath?: SearchPathStep[]
@@ -63,7 +63,7 @@
     targetId: string
   }
 
-  /** Claves dibujadas por nodo antes de resumir el resto en el contador. */
+  /** Keys drawn per node before the rest are summarized in the counter. */
   const MAX_VISIBLE_KEYS = 6
 
   const widthOf = (n: BTreeNode) => {
@@ -77,8 +77,8 @@
     const root = hierarchy<BTreeNode>(treeData, (d) =>
       d.children && d.children.length ? d.children : undefined,
     )
-    // La separación horizontal se adapta al nodo más ancho: con grados altos
-    // (más claves por nodo) la separación fija solapaba los nodos.
+    // Horizontal spacing adapts to the widest node: at high degrees
+    // (more keys per node) the fixed spacing made nodes overlap.
     const widest = root
       .descendants()
       .reduce((max, current) => Math.max(max, widthOf(current.data)), 0)
@@ -135,7 +135,7 @@
   const wordOf = (c?: string) =>
     c === 'equal' ? 'igual' : c === 'less' ? 'menor' : c === 'greater' ? 'mayor' : '—'
 
-  /** Nodo interno que recibió la mediana tras un split: punto de aterrizaje del token. */
+  /** Internal node that received the median after a split: the token's landing point. */
   const medianNode = $derived(
     lastSplitOccurred && promotedKey !== null
       ? (layout.nodes.find(
@@ -199,7 +199,7 @@
     }
   })
 
-  /** Encuadre que centra el árbol en el panel (hasta 90 %). */
+  /** Framing that centers the tree in the panel (up to 90 %). */
   const fitTransform = (minScale: number) => {
     const pad = 58
     const kx = (size.w - pad) / Math.max(160, bbox.w)
@@ -210,10 +210,10 @@
       .scale(scale)
   }
 
-  /** Escala inicial: prioriza que el árbol quepa entero, sin bajar del 45 %. */
+  /** Initial scale: prefers the whole tree to fit, never below 45 %. */
   const home = () => fitTransform(0.45)
 
-  /** Encuadre total (puede quedar pequeño): es lo que hace el botón «maximizar». */
+  /** Full framing (may end up small): what the "maximize" button does. */
   const fitAll = () => fitTransform(0.28)
 
   $effect(() => {
@@ -517,7 +517,7 @@
   .cell.on .kpos {
     fill: color-mix(in srgb, var(--mint) 70%, var(--ink-mute));
   }
-  /* La celda promovida espera a que la mediana termine de ascender (≈78%). */
+  /* The promoted cell waits for the median to finish rising (≈78%). */
   .cell.promo {
     animation: promo-reveal calc(550ms * var(--sp, 1)) var(--ease-out) both;
   }
@@ -538,7 +538,7 @@
     fill: var(--gold);
   }
 
-  /* Token de la mediana: asciende desde la hoja dividida hacia el nodo padre. */
+  /* Median token: rises from the split leaf up to the parent node. */
   .median {
     pointer-events: none;
   }
@@ -576,7 +576,7 @@
     }
   }
 
-  /* Raíz recién creada: destello dorado mientras el árbol gana un nivel. */
+  /* Freshly created root: golden flash while the tree gains a level. */
   .node.root-new .shell {
     stroke: var(--gold);
     fill: #241d38;

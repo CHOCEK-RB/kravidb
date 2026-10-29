@@ -7,7 +7,7 @@ namespace kravidb::api {
 
 namespace {
 
-// Por debajo de este valor los caracteres de control se escapan como \u00XX.
+// Below this value, control characters are escaped as \u00XX.
 constexpr unsigned char control_limit = 0x20U;
 
 }  // namespace

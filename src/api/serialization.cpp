@@ -14,19 +14,19 @@ namespace kravidb::api {
 
 namespace {
 
-// Tamano de la cabecera de pagina, en bytes (igual que el mock del frontend).
+// Size of the page header, in bytes (same as the frontend mock).
 constexpr std::size_t page_header_bytes = 64;
 
-// Tamano de una ranura de directorio, en bytes.
+// Size of a directory slot, in bytes.
 constexpr std::size_t slot_bytes = sizeof(std::uint32_t);
 
-// Base del LSN sintetico: no hay WAL todavia, se deriva del identificador de pagina.
+// Base of the synthetic LSN: there is no WAL yet, it is derived from the page identifier.
 constexpr std::int64_t lsn_base = 1000;
 
-// Nanosegundos que tiene un microsegundo (el contrato expresa Full Scan en micros).
+// Nanoseconds in a microsecond (the contract expresses Full Scan in microseconds).
 constexpr std::int64_t nanoseconds_per_microsecond = 1000;
 
-// Nombre del enum de comparacion tal como lo espera el frontend.
+// Name of the comparison enum as the frontend expects it.
 auto comparison_name(index::SearchPathStep::Comparison comparison) -> std::string_view {
   switch (comparison) {
     case index::SearchPathStep::Comparison::Equal:
@@ -39,7 +39,7 @@ auto comparison_name(index::SearchPathStep::Comparison comparison) -> std::strin
   return "less";
 }
 
-// Lee la carga util legible de la tupla ubicada en `row_id`, si existe.
+// Reads the readable payload of the tuple at `row_id`, when it exists.
 auto record_value(const storage::RecordStore& records, storage::RowID row_id) -> std::string {
   const auto location = storage::decode_row_id(row_id);
   const auto bytes = records.slot_at(location.page_id, location.slot_id);
@@ -166,9 +166,9 @@ auto search_to_json(const storage::RecordStore& records, const index::BTree& tre
   using clock = std::chrono::steady_clock;
   using nanoseconds = std::chrono::nanoseconds;
 
-  // El contrato del frontend (igual que el mock) expresa la latencia del
-  // barrido completo en microsegundos, aunque el campo se llame latency_ns.
-  // El descenso se promedia para no medir el coste de una sola asignacion.
+  // The frontend contract (same as the mock) expresses the full scan latency
+  // in microseconds, even though the field is named latency_ns. The descent is
+  // averaged so the cost of a single allocation is not measured.
   constexpr std::int64_t search_repeats = 128;
 
   const auto index_start = clock::now();
@@ -180,7 +180,7 @@ auto search_to_json(const storage::RecordStore& records, const index::BTree& tre
       std::chrono::duration_cast<nanoseconds>(index_end - index_start).count() / search_repeats;
   const auto trace = tree.search_trace(key);
 
-  static_cast<void>(table.scan_all());  // Calienta cache y asignador antes de medir.
+  static_cast<void>(table.scan_all());  // Warms cache and allocator before measuring.
   const auto full_start = clock::now();
   const auto scanned = table.scan_all();
   const auto full_end = clock::now();

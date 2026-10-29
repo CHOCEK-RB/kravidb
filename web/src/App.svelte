@@ -47,14 +47,14 @@
   const archNode = $derived(findNode(engine.tree, engine.highlightedNodeId) ?? engine.tree)
 
   const nf = new Intl.NumberFormat('es-ES')
-  /** Losas del heap cuando el modo masa desactiva la materialización. */
+  /** Heap slabs when mass mode disables materialization. */
   const massPages = $derived(engine.pageIds.length)
   const massMegabytes = $derived((massPages * 4096) / (1024 * 1024))
   const bulkRunning = $derived(engine.bulk !== null && !engine.bulk.done)
 
   let rackEl = $state<HTMLDivElement | null>(null)
 
-  // Auto-scroll: sigue la losa activa mientras el lote inserta en serie.
+  // Auto-scroll: follows the active slab while the batch inserts serially.
   $effect(() => {
     const id = engine.selectedPageId
     const at = engine.lastInsert?.at ?? engine.located?.at ?? 0

@@ -12,7 +12,7 @@
 
   let { page, selectedSlot, selectedTuple, archField = null }: Props = $props()
 
-  // Sobre de tupla: 8 B de RowID (PageID 32 + SlotID 32, big-endian) + payload.
+  // Tuple envelope: 8 B of RowID (PageID 32 + SlotID 32, big-endian) + payload.
   const rowIdBytes = $derived.by(() => {
     if (!selectedSlot) return [] as number[]
     const i32be = (n: number) => [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255]

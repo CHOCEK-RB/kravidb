@@ -13,7 +13,7 @@ import type {
 } from './types'
 
 export class MockEngine implements ApiClient {
-  private degree = 2 // Grado mínimo t = 2 (máximo 2t - 1 = 3 claves por nodo)
+  private degree = 2 // Minimum degree t = 2 (max 2t - 1 = 3 keys per node)
   private root: BTreeNode
   private nodeCounter = 0
   private pages: Map<number, SlottedPageData> = new Map()
@@ -47,8 +47,8 @@ export class MockEngine implements ApiClient {
       page_id: pageId,
       lsn: 1000 + pageId,
       slot_count: 0,
-      free_space_offset: 64, // Cabecera fija de 64 bytes
-      free_space_end: 4096, // Fondo de la página de 4KB
+      free_space_offset: 64, // Fixed 64-byte header
+      free_space_end: 4096, // Bottom of the 4 KB page
     }
     const page: SlottedPageData = {
       page_id: pageId,
@@ -68,8 +68,8 @@ export class MockEngine implements ApiClient {
       page = this.initPage(this.currentPageId)
     }
 
-    const tupleBytes = 8 + payload.length // 8 bytes clave + tamaño payload
-    const neededBytes = 4 + tupleBytes // 4 bytes slot + datos
+    const tupleBytes = 8 + payload.length // 8 bytes key + payload size
+    const neededBytes = 4 + tupleBytes // 4 bytes slot + data
 
     if (page.free_bytes < neededBytes) {
       this.currentPageId += 1
@@ -110,27 +110,27 @@ export class MockEngine implements ApiClient {
     const fullChild = parent.children[childIndex]
     const newSibling = this.createEmptyNode(fullChild.is_leaf)
 
-    // Clave mediana que sube al padre
+    // Median key that moves up to the parent
     const medianKey = fullChild.keys[t - 1]
 
-    // Rastro observable para la capa visual (mediana promovida y nº de divisiones)
+    // Observable trace for the visual layer (promoted median and split count)
     this.lastPromotedKey = medianKey.key
     this.splitCount += 1
 
-    // newSibling toma las claves a la derecha de la mediana
+    // newSibling takes the keys to the right of the median
     newSibling.keys = fullChild.keys.slice(t)
-    // fullChild se queda con las claves a la izquierda
+    // fullChild keeps the keys to the left
     fullChild.keys = fullChild.keys.slice(0, t - 1)
 
-    // Si no es hoja, repartir hijos
+    // If not a leaf, distribute the children
     if (!fullChild.is_leaf) {
       newSibling.children = fullChild.children.slice(t)
       fullChild.children = fullChild.children.slice(0, t)
     }
 
-    // Insertar hermano en la lista de hijos del padre
+    // Insert the sibling into the parent's child list
     parent.children.splice(childIndex + 1, 0, newSibling)
-    // Insertar mediana en las claves del padre
+    // Insert the median into the parent's keys
     parent.keys.splice(childIndex, 0, medianKey)
   }
 
@@ -163,7 +163,7 @@ export class MockEngine implements ApiClient {
   }
 
   public async insertKey(key: number, payload: string): Promise<InsertResult> {
-    // Si la clave ya existe, actualizar el registro en disco sin corromper el árbol
+    // If the key already exists, update the record on disk without corrupting the tree
     const existing = await this.searchKey(key)
     if (existing.found && existing.target) {
       existing.target.value = payload
@@ -192,7 +192,7 @@ export class MockEngine implements ApiClient {
     }
   }
 
-  // Inserta una tupla nueva (pagina + arbol) sin comprobar duplicados.
+  // Inserts a new tuple (page + tree) without checking for duplicates.
   private insertPair(
     key: number,
     payload: string,
@@ -267,7 +267,7 @@ export class MockEngine implements ApiClient {
       }
     }
 
-    // Cálculo analítico de métricas: O(log n) vs O(n)
+    // Analytical metrics calculation: O(log n) vs O(n)
     const indexLatency = Math.round(180 + nodesVisited * 90 + Math.random() * 40) // ~270-450 ns
     const fullScanLatency = Math.max(
       12,
@@ -305,7 +305,7 @@ export class MockEngine implements ApiClient {
   }
 
   public async setDegree(degree: number): Promise<EngineConfig> {
-    // Reconstruye el arbol con el nuevo grado conservando las tuplas.
+    // Rebuilds the tree with the new degree, keeping the tuples.
     const rows = this.collectTuples()
     this.degree = degree
     this.root = this.createEmptyNode(true)
@@ -321,7 +321,7 @@ export class MockEngine implements ApiClient {
     return this.getConfig()
   }
 
-  // Pares clave/valor en orden de insercion, para reconstruir el arbol.
+  // Key/value pairs in insertion order, to rebuild the tree.
   private collectTuples(): { key: number; value: string }[] {
     const rows: { key: number; value: string }[] = []
     for (const page of this.pages.values()) {
@@ -342,6 +342,8 @@ export class MockEngine implements ApiClient {
   }
 
   private seedInitialData() {
+    // Fallback without a backend; the API is the source of truth. Keep these seeds
+    // in sync with the backend seed data.
     const people = [
       { key: 10, name: 'Ada Lovelace' },
       { key: 20, name: 'Alan Turing' },
@@ -351,7 +353,7 @@ export class MockEngine implements ApiClient {
       { key: 30, name: 'Ken Thompson' },
       { key: 35, name: 'Edsger Dijkstra' },
     ]
-    // Payload ~300 B para que una losa de 4 KB aloje ~12 tuplas, como en disco.
+    // ~300 B payload so a 4 KB slab holds ~12 tuples, as on disk.
     const seeds = people.map(({ key, name }) => ({
       key,
       val: JSON.stringify({ id: key, table: 'users', name, bio: 'x'.repeat(255) }),

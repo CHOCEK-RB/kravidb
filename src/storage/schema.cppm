@@ -1,5 +1,5 @@
 /// \file
-/// \brief Definicion de columnas y esquema de tabla (`Schema`, `ColumnDef`).
+/// \brief Definition of table columns and schema (`Schema`, `ColumnDef`).
 
 export module storage.schema;
 
@@ -8,66 +8,66 @@ export import storage.tuple;
 
 export namespace kravidb::storage {
 
-/// \brief Definicion de una columna dentro del esquema de una tabla.
+/// \brief Definition of a column within a table schema.
 struct ColumnDef {
-  /// \brief Nombre identificador de la columna.
+  /// \brief Identifier name of the column.
   std::string name;
 
-  /// \brief Tipo de dato almacenado en la columna.
+  /// \brief Data type stored in the column.
   FieldType type{FieldType::Int};
 
-  /// \brief Indica si la columna forma la clave primaria (PK).
+  /// \brief Indicates whether the column forms the primary key (PK).
   bool is_primary_key{false};
 
-  /// \brief Compara dos definiciones de columna campo a campo.
+  /// \brief Compares two column definitions field by field.
   [[nodiscard]] auto operator==(const ColumnDef&) const -> bool = default;
 };
 
-/// \brief Esquema relacional de una tabla: lista ordenada de columnas y su clave primaria.
+/// \brief Relational schema of a table: ordered list of columns and their primary key.
 class Schema {
   public:
-  /// \brief Construye un esquema vacio sin columnas.
+  /// \brief Builds an empty schema with no columns.
   Schema() = default;
 
-  /// \brief Construye un esquema a partir de sus columnas.
-  /// \param columns Coleccion ordenada de columnas de la tabla.
-  /// \note Lanza `std::invalid_argument` si alguna columna tiene nombre vacio o
-  /// si se define mas de una clave primaria.
+  /// \brief Builds a schema from its columns.
+  /// \param columns Ordered collection of table columns.
+  /// \note Throws `std::invalid_argument` if any column has an empty name or
+  /// if more than one primary key is defined.
   explicit Schema(std::vector<ColumnDef> columns) : columns_{std::move(columns)} {
     for (std::size_t index = 0; index < columns_.size(); ++index) {
       const auto& col = columns_.at(index);
       if (col.name.empty()) {
-        throw std::invalid_argument{"Schema: el nombre de la columna no puede estar vacio"};
+        throw std::invalid_argument{"Schema: column name must not be empty"};
       }
       if (col.is_primary_key) {
         if (pk_index_.has_value()) {
-          throw std::invalid_argument{"Schema: solo se permite una clave primaria"};
+          throw std::invalid_argument{"Schema: only one primary key is allowed"};
         }
         pk_index_ = index;
       }
     }
   }
 
-  /// \brief Acceso de solo lectura a la lista de columnas.
+  /// \brief Read-only access to the column list.
   [[nodiscard]] auto columns() const noexcept -> const std::vector<ColumnDef>& { return columns_; }
 
-  /// \brief Numero de columnas definidas en el esquema.
+  /// \brief Number of columns defined in the schema.
   [[nodiscard]] auto column_count() const noexcept -> std::size_t { return columns_.size(); }
 
-  /// \brief Indica si el esquema no tiene columnas.
+  /// \brief Indicates whether the schema has no columns.
   [[nodiscard]] auto empty() const noexcept -> bool { return columns_.empty(); }
 
-  /// \brief Obtiene la definicion de una columna por su posicion ordinal.
-  /// \param index Posicion de la columna (base 0).
-  /// \return Referencia a la definicion de la columna.
-  /// \note Lanza `std::out_of_range` si el indice supera `column_count()`.
+  /// \brief Gets the definition of a column by its ordinal position.
+  /// \param index Column position (0-based).
+  /// \return Reference to the column definition.
+  /// \note Throws `std::out_of_range` if the index exceeds `column_count()`.
   [[nodiscard]] auto column_at(std::size_t index) const -> const ColumnDef& {
     return columns_.at(index);
   }
 
-  /// \brief Busca el indice ordinal de una columna por su nombre.
-  /// \param name Nombre de la columna buscada.
-  /// \return La posicion ordinal, o `std::nullopt` si no existe.
+  /// \brief Searches the ordinal index of a column by its name.
+  /// \param name Name of the column being searched.
+  /// \return The ordinal position, or `std::nullopt` if it does not exist.
   [[nodiscard]] auto find_column(std::string_view name) const noexcept
       -> std::optional<std::size_t> {
     for (std::size_t index = 0; index < columns_.size(); ++index) {
@@ -78,14 +78,14 @@ class Schema {
     return std::nullopt;
   }
 
-  /// \brief Indice ordinal de la clave primaria, si esta definida.
+  /// \brief Ordinal index of the primary key, if it is defined.
   [[nodiscard]] auto primary_key_index() const noexcept -> std::optional<std::size_t> {
     return pk_index_;
   }
 
-  /// \brief Valida si una tupla se ajusta a las columnas y tipos del esquema.
-  /// \param tuple Tupla a comprobar.
-  /// \return `true` si el numero de campos y cada tipo coinciden con el esquema.
+  /// \brief Validates whether a tuple matches the columns and types of the schema.
+  /// \param tuple Tuple to check.
+  /// \return `true` if the field count and each type match the schema.
   [[nodiscard]] auto validate(const Tuple& tuple) const noexcept -> bool {
     if (tuple.field_count() != columns_.size()) {
       return false;
@@ -100,15 +100,18 @@ class Schema {
       if (col.type == FieldType::Varchar && !std::holds_alternative<std::string>(field)) {
         return false;
       }
+      if (col.type == FieldType::Decimal && !std::holds_alternative<Decimal>(field)) {
+        return false;
+      }
     }
     return true;
   }
 
   private:
-  /// \brief Definiciones de columna en orden ordinal.
+  /// \brief Column definitions in ordinal order.
   std::vector<ColumnDef> columns_;
 
-  /// \brief Indice ordinal de la clave primaria (si se definio alguna).
+  /// \brief Ordinal index of the primary key (if one was defined).
   std::optional<std::size_t> pk_index_{std::nullopt};
 };
 

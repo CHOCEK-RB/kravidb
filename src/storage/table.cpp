@@ -5,27 +5,35 @@ import storage.row_id;
 
 namespace kravidb::storage {
 
-void Table::insert(const Tuple& tuple) {
+auto Table::insert(const Tuple& tuple) -> InsertResult {
   if (tuple.field_count() == 0) {
-    throw std::invalid_argument{"Table: la tupla no puede estar vacia"};
+    throw std::invalid_argument{"Table: tuple must not be empty"};
   }
 
   if (!schema_.empty() && !schema_.validate(tuple)) {
-    throw std::invalid_argument{"Table: la tupla no coincide con el esquema"};
+    throw std::invalid_argument{"Table: tuple does not match the schema"};
   }
 
   const std::size_t pk_index = schema_.primary_key_index().value_or(0);
   const auto* key_ptr = std::get_if<std::int64_t>(&tuple.fields().at(pk_index));
   if (key_ptr == nullptr) {
-    throw std::invalid_argument{"Table: el primer campo (PK) debe ser de tipo Int"};
+    throw std::invalid_argument{"Table: first field (PK) must be of type Int"};
   }
 
   const index::Key key = *key_ptr;
+  if (index_.search(key).has_value()) {
+    throw std::invalid_argument{"Table: primary key already exists"};
+  }
+
   const std::vector<std::byte> record = tuple.serialize();
 
+  // shortcut: the store is append-only and does not support undo; if index_.insert
+  // fails for lack of memory, the record is left unindexed. Add a journal or
+  // deletion in RecordStore if atomicity is required.
   const RowID row_id = records_.insert(record);
 
   index_.insert(key, row_id);
+  return InsertResult{.row_id = row_id, .index_stats = index_.last_insert_stats()};
 }
 
 auto Table::find_by_index(index::Key key) const -> std::optional<Tuple> {

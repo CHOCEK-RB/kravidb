@@ -59,7 +59,9 @@ jobs:
             base="${{ github.event.pull_request.base.sha }}"
             files=$(git diff --name-only --diff-filter=d "$base...HEAD" \
               -- ':(glob)src/**/*.cpp' ':(glob)src/**/*.cppm' \
-                 ':(glob)tests/**/*.cpp' ':(glob)tests/**/*.cppm' | paste -sd' ' -)
+                 ':(glob)apps/**/*.cpp' ':(glob)apps/**/*.cppm' \
+                 ':(glob)tests/**/*.cpp' ':(glob)tests/**/*.cppm' \
+                 ':(glob)benchmarks/**/*.cpp' ':(glob)benchmarks/**/*.cppm' | paste -sd' ' -)
           fi
           echo "files=$files" >> "$GITHUB_OUTPUT"
           echo "Lint scope: ${files:-(all sources)}"
@@ -76,6 +78,56 @@ jobs:
       - name: Run unit tests (Debug, ASan + UBSan)
         run: xmake test
 
+      - name: HTTP API smoke test
+        run: |
+          set -euo pipefail
+          xmake build kravidb_api
+          port=18080
+          KRAVIDB_DEGREE=4 KRAVIDB_BIND=127.0.0.1 \
+            ./build/linux/x86_64/debug/kravidb_api "$port" > build/kravidb_api.log 2>&1 &
+          api_pid=$!
+          trap 'kill "$api_pid" 2>/dev/null || true; wait "$api_pid" 2>/dev/null || true' EXIT
+
+          ready=0
+          for _ in $(seq 1 50); do
+            if curl -fsS "http://127.0.0.1:$port/api/v1/health" > /dev/null; then
+              ready=1
+              break
+            fi
+            sleep 0.1
+          done
+          if [ "$ready" -ne 1 ]; then
+            cat build/kravidb_api.log
+            exit 1
+          fi
+
+          test "$(curl -fsS "http://127.0.0.1:$port/api/v1/health")" = '{"status":"ok"}'
+          test "$(curl -fsS "http://127.0.0.1:$port/api/v1/config")" = '{"degree":4,"page_size":4096}'
+
+          insert=$(curl -fsS -X POST "http://127.0.0.1:$port/api/v1/btree/insert" \
+            -d '{"key":42,"payload":"demo"}')
+          echo "insert: $insert"
+          curl -fsS "http://127.0.0.1:$port/api/v1/btree/search?key=42" | grep -q '"found":true'
+
+          duplicate=$(curl -sS -o build/duplicate.json -w '%{http_code}' -X POST \
+            "http://127.0.0.1:$port/api/v1/btree/insert" -d '{"key":42,"payload":"otro"}')
+          test "$duplicate" = "409"
+
+          malformed=$(curl -sS -o build/malformed.json -w '%{http_code}' -X POST \
+            "http://127.0.0.1:$port/api/v1/btree/insert" -d '{"key":12abc,"payload":"x"}')
+          test "$malformed" = "400"
+
+          nested=$(curl -sS -o build/nested.json -w '%{http_code}' -X POST \
+            "http://127.0.0.1:$port/api/v1/btree/insert" -d '{"payload":"\"key\":99"}')
+          test "$nested" = "400"
+
+          curl -fsS "http://127.0.0.1:$port/api/v1/page/1" | grep -q '"page_id":1'
+          missing_page=$(curl -sS -o build/missing_page.json -w '%{http_code}' \
+            "http://127.0.0.1:$port/api/v1/page/999")
+          test "$missing_page" = "404"
+
+          test "$(curl -fsS -X POST "http://127.0.0.1:$port/api/v1/reset")" = '{"status":"ok"}'
+
       - name: Configure and build (Release mode)
         run: |
           xmake f -y -c -m release --toolchain=clang --sdk=/usr/lib/llvm-22 --runtimes=c++_shared --ldflags=-lc++abi
@@ -83,3 +135,37 @@ jobs:
 
       - name: Run unit tests (Release)
         run: xmake test
+
+  web:
+    name: Web (Svelte)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.3
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Check formatting
+        run: bun run format:check
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Check types
+        run: bun run check:types
+
+      - name: Check unused exports and dependencies
+        run: bun run check:knip
+
+      - name: Build
+        run: bun run build

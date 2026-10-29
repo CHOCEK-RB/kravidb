@@ -7,7 +7,7 @@ namespace kravidb::storage {
 
 auto PageManager::insert(std::span<const std::byte> record) -> RowID {
   if (record.size() + detail::slot_overhead > page_size_) {
-    throw std::length_error{"PageManager: el registro excede el tamano de pagina"};
+    throw std::length_error{"PageManager: record exceeds the page size"};
   }
   if (pages_.empty() || !pages_.back().can_fit(record.size())) {
     pages_.emplace_back(page_size_);

@@ -1,12 +1,12 @@
-// Harness de benchmarks (Google Benchmark): compara el Index Scan O(log n)
-// contra el Full Table Scan O(n) sobre volumenes crecientes de filas.
+// Benchmark harness (Google Benchmark): compares Index Scan O(log n) against
+// Full Table Scan O(n) over growing volumes of rows.
 //
-// Dataset sintetico: N tuplas `(i, payload)` insertadas a traves de `Table`,
-// de modo que se ejercita la ruta real (RecordStore + BTree). Se mide latencia
-// por operacion y Page I/O logico:
-//   - Index Scan (`Table::find_by_index`): lee una pagina de datos por acierto y
-//     recorre O(log n) nodos del indice (residente en memoria).
-//   - Full Scan (`Table::scan_all`): recorre todas las paginas del store.
+// Synthetic dataset: N `(i, payload)` tuples inserted through `Table`, so the
+// real path (RecordStore + BTree) is exercised. It measures per-operation
+// latency and logical Page I/O:
+//   - Index Scan (`Table::find_by_index`): reads one data page per hit and walks
+//     O(log n) index nodes (resident in memory).
+//   - Full Scan (`Table::scan_all`): walks every page in the store.
 
 #include <benchmark/benchmark.h>
 
@@ -32,7 +32,7 @@ constexpr int width_rows = 10;
 constexpr int width_metric = 16;
 constexpr int width_speedup = 12;
 
-// Payload determinista de longitud fija (SSO, sin reservas extra).
+// Deterministic fixed-length payload (SSO, no extra allocation).
 [[nodiscard]] auto make_payload(std::size_t row) -> std::string {
   std::string text(payload_size, '0');
   auto value = static_cast<std::uint64_t>(row);
@@ -71,8 +71,8 @@ struct Dataset {
   return data;
 }
 
-// El dataset se construye una sola vez por tamano y se reutiliza entre
-// benchmarks y repeticiones.
+// The dataset is built once per size and reused across benchmarks and
+// repetitions.
 [[nodiscard]] auto dataset_for(std::size_t rows) -> Dataset& {
   static std::map<std::size_t, std::unique_ptr<Dataset>> cache;
   const auto found = cache.find(rows);
@@ -147,8 +147,8 @@ BENCHMARK_DEFINE_F(ScanBenchmark, FullScan)(benchmark::State& state) {
     benchmark::DoNotOptimize(rows.data());
   }
 
-  // `scan_all` usa `slot_at`, que no toca `PageIOStats`; el I/O logico del full
-  // scan es, por construccion, el numero de paginas recorridas.
+  // `scan_all` uses `slot_at`, which does not touch `PageIOStats`; the full
+  // scan's logical I/O is, by construction, the number of pages traversed.
   const auto pages = engine.records().page_count();
   state.counters["hits"] = static_cast<double>(scanned);
   state.counters["pages/op"] = static_cast<double>(pages);
@@ -174,8 +174,8 @@ BENCHMARK_REGISTER_F(ScanBenchmark, FullScan)
 
 using Run = benchmark::BenchmarkReporter::Run;
 
-// Recolecta los resultados (para el reporte comparativo) y delega la tabla
-// estandar de Google Benchmark en el reporter por defecto.
+// Collects the results (for the comparison report) and delegates the standard
+// Google Benchmark table to the default reporter.
 class ComparisonReporter final : public benchmark::BenchmarkReporter {
   public:
   ComparisonReporter() : display_{benchmark::CreateDefaultDisplayReporter()} {}
@@ -299,15 +299,15 @@ void print_comparison(const std::vector<Run>& runs) {
     const ComparisonRow& first = rows.begin()->second;
     const ComparisonRow& last = rows.rbegin()->second;
     std::cout << '\n' << "Conclusion:" << '\n';
-    std::cout << "  N crece "
+    std::cout << "  N grows "
               << safe_ratio(static_cast<double>(last.rows), static_cast<double>(first.rows))
-              << "x (de " << first.rows << " a " << last.rows << ")." << '\n';
+              << "x (from " << first.rows << " to " << last.rows << ")." << '\n';
     std::cout << "  Index Scan: pages/op " << first.index_pages << " -> " << last.index_pages
-              << " (constante) y nodos/op " << first.index_nodes << " -> " << last.index_nodes
-              << " (crecimiento ~log)." << '\n';
+              << " (constant) and nodes/op " << first.index_nodes << " -> " << last.index_nodes
+              << " (~log growth)." << '\n';
     std::cout << "  Full Scan:  pages/op " << first.full_pages << " -> " << last.full_pages
-              << " (crecimiento ~lineal)." << '\n';
-    std::cout << "  Speedup del Index Scan en N=" << last.rows << ": "
+              << " (~linear growth)." << '\n';
+    std::cout << "  Index Scan speedup at N=" << last.rows << ": "
               << safe_ratio(last.full_ns, last.index_ns) << "x." << '\n';
   }
 }

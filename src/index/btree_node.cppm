@@ -1,5 +1,5 @@
 /// \file
-/// \brief Nodo del arbol B (`BTreeNode`) y sus invariantes.
+/// \brief B-tree node (`BTreeNode`) and its invariants.
 
 export module index.btree_node;
 
@@ -7,23 +7,23 @@ import std;
 
 export namespace kravidb::index {
 
-/// \brief Clave indexada: entero de 64 bits con signo.
+/// \brief Indexed key: signed 64-bit integer.
 using Key = std::int64_t;
 
-/// \brief Localizador de registro almacenado junto a cada clave.
+/// \brief Record locator stored next to each key.
 using RowID = std::uint64_t;
 
-/// \brief Nodo de un arbol B, con `2t - 1` claves como maximo.
+/// \brief Node of a B-tree, with at most `2t - 1` keys.
 ///
-/// El nodo no posee a sus hijos: solo guarda punteros, y es el arbol quien posee
-/// los nodos. Un nodo hoja no tiene hijos; un nodo interno tiene exactamente
-/// `claves + 1` hijos.
+/// The node does not own its children: it only stores pointers, and the tree
+/// owns the nodes. A leaf node has no children; an internal node has exactly
+/// `keys + 1` children.
 class BTreeNode {
   public:
-  /// \brief Crea un nodo vacio.
-  /// \param degree Grado minimo `t`; debe ser mayor o igual que 2.
-  /// \param leaf Indica si el nodo es hoja.
-  /// \param id Identificador estable del nodo dentro de su arbol.
+  /// \brief Creates an empty node.
+  /// \param degree Minimum degree `t`; must be greater than or equal to 2.
+  /// \param leaf Indicates whether the node is a leaf.
+  /// \param id Stable identifier of the node within its tree.
   explicit BTreeNode(int degree, bool leaf, std::size_t id = 0)
       : degree_{validate_degree(degree)}, is_leaf_{leaf}, id_{id} {
     keys_.reserve(max_keys());
@@ -33,60 +33,60 @@ class BTreeNode {
     }
   }
 
-  /// \brief Copia deshabilitada.
+  /// \brief Copy disabled.
   BTreeNode(const BTreeNode&) = delete;
 
-  /// \brief Asignacion por copia deshabilitada.
+  /// \brief Copy assignment disabled.
   auto operator=(const BTreeNode&) -> BTreeNode& = delete;
 
-  /// \brief Movimiento deshabilitado (los hijos son punteros y la propiedad la fija el arbol).
+  /// \brief Move disabled (children are pointers and ownership is fixed by the tree).
   BTreeNode(BTreeNode&&) = delete;
 
-  /// \brief Asignacion por movimiento deshabilitada.
+  /// \brief Move assignment disabled.
   auto operator=(BTreeNode&&) -> BTreeNode& = delete;
 
   /// \brief Destructor.
   ~BTreeNode() = default;
 
-  /// \brief Grado minimo `t` del nodo.
+  /// \brief Minimum degree `t` of the node.
   [[nodiscard]] auto min_degree() const noexcept -> int { return degree_; }
 
-  /// \brief Indica si el nodo es hoja.
+  /// \brief Indicates whether the node is a leaf.
   [[nodiscard]] auto is_leaf() const noexcept -> bool { return is_leaf_; }
 
-  /// \brief Identificador estable del nodo, asignado por el arbol.
+  /// \brief Stable identifier of the node, assigned by the tree.
   [[nodiscard]] auto id() const noexcept -> std::size_t { return id_; }
 
-  /// \brief Numero maximo de claves de un nodo (`2t - 1`).
+  /// \brief Maximum number of keys of a node (`2t - 1`).
   [[nodiscard]] auto max_keys() const noexcept -> std::size_t {
     return (2 * static_cast<std::size_t>(degree_)) - 1;
   }
 
-  /// \brief Numero minimo de claves de un nodo no raiz (`t - 1`).
+  /// \brief Minimum number of keys of a non-root node (`t - 1`).
   [[nodiscard]] auto min_keys() const noexcept -> std::size_t {
     return static_cast<std::size_t>(degree_) - 1;
   }
 
-  /// \brief Numero maximo de hijos de un nodo interno (`2t`).
+  /// \brief Maximum number of children of an internal node (`2t`).
   [[nodiscard]] auto max_children() const noexcept -> std::size_t {
     return 2 * static_cast<std::size_t>(degree_);
   }
 
-  /// \brief Numero de claves almacenadas.
+  /// \brief Number of keys stored.
   [[nodiscard]] auto key_count() const noexcept -> std::size_t { return keys_.size(); }
 
-  /// \brief Numero de hijos almacenados.
+  /// \brief Number of children stored.
   [[nodiscard]] auto child_count() const noexcept -> std::size_t { return children_.size(); }
 
-  /// \brief Indica si el nodo alcanzo el maximo de claves.
+  /// \brief Indicates whether the node reached the maximum number of keys.
   [[nodiscard]] auto is_full() const noexcept -> bool { return keys_.size() == max_keys(); }
 
-  /// \brief Indica si el nodo no tiene claves.
+  /// \brief Indicates whether the node has no keys.
   [[nodiscard]] auto is_empty() const noexcept -> bool { return keys_.empty(); }
 
-  /// \brief Comprueba las invariantes estructurales del nodo.
-  /// \return `true` si hay tantos `row_ids` como claves y no se supera `max_keys()`; en
-  /// las hojas, si no hay hijos, y en los nodos internos, si hay `claves + 1` hijos.
+  /// \brief Checks the node's structural invariants.
+  /// \return `true` if there are as many `row_ids` as keys and `max_keys()` is not exceeded;
+  /// in leaves, if there are no children, and in internal nodes, if there are `keys + 1` children.
   [[nodiscard]] auto has_valid_shape() const noexcept -> bool {
     if (keys_.size() != row_ids_.size() || keys_.size() > max_keys()) {
       return false;
@@ -97,10 +97,10 @@ class BTreeNode {
     return children_.size() == keys_.size() + 1;
   }
 
-  /// \brief Indice de la primera clave que no es menor que `key`.
-  /// \param key Clave a comparar.
-  /// \param comparisons Contador que se incrementa con cada comparacion realizada.
-  /// \return La posicion dentro de `keys()` donde buscar o insertar `key`.
+  /// \brief Index of the first key that is not less than `key`.
+  /// \param key Key to compare.
+  /// \param comparisons Counter incremented on each comparison performed.
+  /// \return The position within `keys()` where to search for or insert `key`.
   [[nodiscard]] auto lower_bound_index(Key key, std::size_t& comparisons) const -> std::size_t {
     const auto position =
         std::ranges::lower_bound(keys_, key, [&comparisons](Key lhs, Key rhs) -> bool {
@@ -110,52 +110,52 @@ class BTreeNode {
     return static_cast<std::size_t>(std::distance(keys_.begin(), position));
   }
 
-  /// \brief Acceso mutable a las claves.
+  /// \brief Mutable access to the keys.
   [[nodiscard]] auto keys() noexcept -> std::vector<Key>& { return keys_; }
 
-  /// \brief Acceso de solo lectura a las claves.
+  /// \brief Read-only access to the keys.
   [[nodiscard]] auto keys() const noexcept -> const std::vector<Key>& { return keys_; }
 
-  /// \brief Acceso mutable a los localizadores.
+  /// \brief Mutable access to the locators.
   [[nodiscard]] auto row_ids() noexcept -> std::vector<RowID>& { return row_ids_; }
 
-  /// \brief Acceso de solo lectura a los localizadores.
+  /// \brief Read-only access to the locators.
   [[nodiscard]] auto row_ids() const noexcept -> const std::vector<RowID>& { return row_ids_; }
 
-  /// \brief Acceso mutable a los hijos.
+  /// \brief Mutable access to the children.
   [[nodiscard]] auto children() noexcept -> std::vector<BTreeNode*>& { return children_; }
 
-  /// \brief Acceso de solo lectura a los hijos.
+  /// \brief Read-only access to the children.
   [[nodiscard]] auto children() const noexcept -> const std::vector<BTreeNode*>& {
     return children_;
   }
 
   private:
-  /// \brief Grado minimo `t`.
+  /// \brief Minimum degree `t`.
   int degree_;
 
-  /// \brief Indica si el nodo es hoja.
+  /// \brief Indicates whether the node is a leaf.
   bool is_leaf_;
 
-  /// \brief Identificador estable del nodo dentro de su arbol.
+  /// \brief Stable identifier of the node within its tree.
   std::size_t id_;
 
-  /// \brief Claves, ordenadas de forma ascendente.
+  /// \brief Keys, sorted in ascending order.
   std::vector<Key> keys_;
 
-  /// \brief Localizadores paralelos a las claves.
+  /// \brief Locators parallel to the keys.
   std::vector<RowID> row_ids_;
 
-  /// \brief Hijos; vacio en las hojas y `claves + 1` elementos en los nodos internos.
+  /// \brief Children; empty in leaves and `keys + 1` elements in internal nodes.
   std::vector<BTreeNode*> children_;
 
-  /// \brief Valida el grado minimo recibido.
-  /// \param degree Grado propuesto.
-  /// \return El mismo grado si es valido.
-  /// \note Lanza `std::invalid_argument` si `degree < 2`.
+  /// \brief Validates the received minimum degree.
+  /// \param degree Proposed degree.
+  /// \return The same degree if it is valid.
+  /// \note Throws `std::invalid_argument` if `degree < 2`.
   static auto validate_degree(int degree) -> int {
     if (degree < 2) {
-      throw std::invalid_argument{"BTreeNode: el grado minimo t debe ser >= 2"};
+      throw std::invalid_argument{"BTreeNode: minimum degree t must be >= 2"};
     }
     return degree;
   }

@@ -13,7 +13,8 @@ BTree::BTree(BTree&& other) noexcept
       root_{std::exchange(other.root_, nullptr)},
       last_search_stats_{other.last_search_stats_},
       splits_in_last_insert_{other.splits_in_last_insert_},
-      last_split_promoted_key_{other.last_split_promoted_key_} {}
+      last_split_promoted_key_{other.last_split_promoted_key_},
+      last_new_root_created_{other.last_new_root_created_} {}
 
 auto BTree::operator=(BTree&& other) noexcept -> BTree& {
   if (this != &other) {
@@ -24,6 +25,7 @@ auto BTree::operator=(BTree&& other) noexcept -> BTree& {
     last_search_stats_ = other.last_search_stats_;
     splits_in_last_insert_ = other.splits_in_last_insert_;
     last_split_promoted_key_ = other.last_split_promoted_key_;
+    last_new_root_created_ = other.last_new_root_created_;
   }
   return *this;
 }
@@ -35,6 +37,7 @@ void BTree::clear() {
   last_search_stats_ = SearchStats{};
   splits_in_last_insert_ = 0;
   last_split_promoted_key_.reset();
+  last_new_root_created_ = false;
 }
 
 auto BTree::empty() const noexcept -> bool {
@@ -128,6 +131,10 @@ auto BTree::search_trace(Key key) const -> SearchTrace {
 }
 
 void BTree::insert(Key key, RowID row_id) {
+  splits_in_last_insert_ = 0;
+  last_split_promoted_key_.reset();
+  last_new_root_created_ = false;
+
   BTreeNode* old_root = root_;
   if (old_root->is_full()) {
     BTreeNode* new_root = create_node(false);
@@ -135,23 +142,23 @@ void BTree::insert(Key key, RowID row_id) {
     new_root->children().push_back(old_root);
     split_child(new_root, 0, old_root);
     insert_non_full(new_root, key, row_id);
+    last_new_root_created_ = true;
   } else {
     insert_non_full(old_root, key, row_id);
   }
 }
 
-auto BTree::insert_with_stats(Key key, RowID row_id) -> InsertStats {
-  splits_in_last_insert_ = 0;
-  last_split_promoted_key_.reset();
-  const BTreeNode* const old_root = root_;
-
-  insert(key, row_id);
-
+auto BTree::last_insert_stats() const noexcept -> InsertStats {
   return InsertStats{
       .split_occurred = splits_in_last_insert_ > 0,
       .promoted_key = last_split_promoted_key_,
-      .new_root_created = root_ != old_root,
+      .new_root_created = last_new_root_created_,
   };
+}
+
+auto BTree::insert_with_stats(Key key, RowID row_id) -> InsertStats {
+  insert(key, row_id);
+  return last_insert_stats();
 }
 
 void BTree::split_child(BTreeNode* parent, std::size_t index, BTreeNode* child) {

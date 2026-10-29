@@ -25,7 +25,7 @@
 
   const MAX_KEYS = $derived(2 * degree - 1)
 
-  // Una sola pasada por las hojas: ocupación media + histograma de reparto.
+  // A single pass over the leaves: average occupancy + distribution histogram.
   const leafStats = $derived.by(() => {
     if (!tree || MAX_KEYS <= 0) return null
     const buckets = [0, 0, 0, 0, 0]
