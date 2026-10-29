@@ -28,12 +28,6 @@ export import sql.lexer;
 
 export namespace kravidb::sql {
 
-/// \brief SQLSTATE of a syntax error.
-inline constexpr std::string_view sqlstate_syntax_error = "42601";
-
-/// \brief SQLSTATE of a recognized but unsupported feature.
-inline constexpr std::string_view sqlstate_feature_not_supported = "0A000";
-
 /// \brief Parses exactly one statement from a token sequence.
 ///
 /// \details `tokens` must end with `TokenKind::end_of_input`, as produced by

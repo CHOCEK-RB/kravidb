@@ -11,9 +11,6 @@ namespace {
 /// \brief Deepest parenthesis nesting accepted before giving up.
 constexpr std::size_t max_expression_depth = 256;
 
-/// \brief SQLSTATE raised when the nesting limit is exceeded.
-constexpr std::string_view sqlstate_statement_too_complex = "54001";
-
 /// \brief Unsupported clause or statement word and the feature it names.
 struct UnsupportedWord {
   std::string_view word;
@@ -135,7 +132,7 @@ class Parser {
                               ? std::string{"syntax error at end of input"}
                               : std::format("syntax error at or near \"{}\"", token.text);
     return SqlError{
-        .sqlstate = std::string{sqlstate_syntax_error},
+        .sqlstate = std::string{sqlstate::syntax_error},
         .message = std::move(message),
         .position = token.position,
     };
@@ -143,7 +140,7 @@ class Parser {
 
   [[nodiscard]] static auto unsupported(std::string_view feature, const Token& token) -> SqlError {
     return SqlError{
-        .sqlstate = std::string{sqlstate_feature_not_supported},
+        .sqlstate = std::string{sqlstate::feature_not_supported},
         .message = std::format("{} is not supported", feature),
         .position = token.position,
     };
@@ -178,7 +175,7 @@ class Parser {
 auto Parser::run() -> SqlResult<Stmt> {
   if (tokens_.empty() || tokens_.back().kind != TokenKind::end_of_input) {
     return std::unexpected{SqlError{
-        .sqlstate = std::string{sqlstate_syntax_error},
+        .sqlstate = std::string{sqlstate::syntax_error},
         .message = "token sequence must end with end_of_input",
         .position = SourcePosition{},
     }};
@@ -186,7 +183,7 @@ auto Parser::run() -> SqlResult<Stmt> {
 
   if (at(TokenKind::end_of_input) || at(TokenKind::semicolon)) {
     return std::unexpected{SqlError{
-        .sqlstate = std::string{sqlstate_syntax_error},
+        .sqlstate = std::string{sqlstate::syntax_error},
         .message = "empty statement",
         .position = current().position,
     }};
@@ -201,7 +198,7 @@ auto Parser::run() -> SqlResult<Stmt> {
     advance();
     if (!at(TokenKind::end_of_input)) {
       return std::unexpected{SqlError{
-          .sqlstate = std::string{sqlstate_syntax_error},
+          .sqlstate = std::string{sqlstate::syntax_error},
           .message = "only one statement is allowed per query",
           .position = current().position,
       }};
@@ -459,7 +456,7 @@ auto Parser::parse_primary() -> SqlResult<std::unique_ptr<Expr>> {
     case TokenKind::left_paren: {
       if (depth_ >= max_expression_depth) {
         return std::unexpected{SqlError{
-            .sqlstate = std::string{sqlstate_statement_too_complex},
+            .sqlstate = std::string{sqlstate::statement_too_complex},
             .message = "expression nesting is too deep",
             .position = token.position,
         }};
