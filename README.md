@@ -7,7 +7,7 @@
   <a href="https://xmake.io"><img src="https://img.shields.io/badge/build-xmake-2563EB?style=flat-square" alt="xmake"></a>
   <a href="https://clang.llvm.org/"><img src="https://img.shields.io/badge/clang-22-38BDF8?style=flat-square&logo=llvm&logoColor=white" alt="Clang 22"></a>
   <a href="https://github.com/CHOCEK-RB/kravidb/actions/workflows/ci.yml"><img src="https://github.com/CHOCEK-RB/kravidb/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <img src="https://img.shields.io/badge/tests-78%20passed-brightgreen?style=flat-square" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-374%20passed-brightgreen?style=flat-square" alt="Tests">
   <img src="https://img.shields.io/badge/version-0.1.0-22D3EE?style=flat-square" alt="Version 0.1.0">
 
   <br><br>
@@ -18,6 +18,7 @@
   <a href="#-inicio-rápido">Inicio rápido</a> &nbsp;•&nbsp;
   <a href="#-árbol-b-y-grado-t">Árbol B & Grado t</a> &nbsp;•&nbsp;
   <a href="#-visualizador-web-y-api">Visualizador & API</a> &nbsp;•&nbsp;
+  <a href="#-analizador-léxico-sql">Lexer SQL</a> &nbsp;•&nbsp;
   <a href="#-pruebas-y-benchmarks">Pruebas & Benchmarks</a> &nbsp;•&nbsp;
   <a href="#-estructura">Estructura</a> &nbsp;•&nbsp;
   <a href="#-calidad-de-código">Calidad de código</a> &nbsp;•&nbsp;
@@ -86,6 +87,7 @@ El proyecto aprovecha lo más moderno de **C++23** —incluyendo **módulos** y 
 | **clang-tidy** | `17+` | Análisis estático |
 | **GoogleTest** | `1.15+` | Suite de pruebas unitarias automatizadas |
 | **Google Benchmark** | `1.8+` | Micro-benchmarking de operaciones de almacenamiento |
+| **FTXUI** | `7.0.3` | Interfaz de terminal del visor de tokens SQL |
 | **Bun** | `1.0+` | Bundler y entorno para el visualizador web |
 
 <br>
@@ -116,6 +118,104 @@ xmake run kravidb
 ```console
 Booting: Starting kravidb storage engine v0.1.0
 StorageEngine initialized with 4096-byte pages and BTree degree 64.
+```
+
+<br>
+
+## 🔤 Analizador léxico SQL
+
+`apps/sql_lexer` es un visor de tokens independiente del motor. Recibe una sentencia SQL,
+la tokeniza con `kravidb::sql::tokenize` y muestra cada token con su categoría, lexema,
+posición y offset. No ejecuta consultas ni valida tablas o columnas.
+
+### Uso
+
+```bash
+# Compilar el visor
+xmake build kravidb_lexer
+
+# TUI interactiva (stdin es una terminal)
+xmake run kravidb_lexer
+
+# Tokenizar un archivo
+xmake run kravidb_lexer --file consulta.sql
+
+# Tokenizar stdin (modo estático, sin TUI)
+printf "SELECT 1;" | xmake run kravidb_lexer
+```
+
+En modo interactivo se edita la sentencia en el panel `SQL` (borde cian); la esquina
+superior derecha muestra `cursor línea:columna`, que se actualiza con las flechas. Los
+tokens, la tabla y los posibles errores se actualizan en vivo. El panel `SQL` crece hasta
+unas pocas líneas y después se desplaza con su propia barra; la tabla de tokens también
+tiene barra y se recorre con `PgUp`/`PgDn`, sin desplazar la sentencia. `Ctrl+L` limpia la
+sentencia y deja el cursor al inicio; `Esc` o `Ctrl+C` cierran la TUI. En modo archivo o
+tubería el documento se imprime una vez y el proceso termina.
+
+### Reglas léxicas
+
+| Aspecto | Regla |
+|:---|:---|
+| Mayúsculas | Palabras reservadas e identificadores sin comillas son ASCII *case-insensitive*; el lexer normaliza a minúsculas. La columna `LEXEME` muestra el texto original del fuente. |
+| Identificadores | Empiezan con letra ASCII o `_`; continúan con letras, dígitos o `_`. Longitud máxima: 63 bytes. |
+| Espacios | Espacio, tabulador, salto de línea, retorno de carro, form feed y vertical tab se ignoran. |
+| Enteros | Dígitos con signo `-` opcional. |
+| Decimales | Un punto seguido de al menos un dígito. Se conserva el texto exacto. |
+| Cadenas | Comillas simples; `''` representa una comilla. Pueden ocupar varias líneas. NUL no es válido. |
+| Operadores | `=`, `<>`, `!=`, `<`, `<=`, `>`, `>=`. `!` solo no es válido. |
+| Puntuación | `,`, `;`, `(`, `)`, `*`. |
+| Comentarios | No soportados; `--` y `/* ... */` producen un error léxico. |
+| Caracteres inválidos | Cualquier carácter fuera de las reglas anteriores produce `SQLSTATE 42601` con su posición. |
+
+### Tokens
+
+| Categoría | Ejemplos |
+|:---|:---|
+| `KEYWORD` | `SELECT`, `FROM`, `WHERE`, `AND`, `OR` |
+| `IDENTIFIER` | `users`, `id`, `name_2` |
+| `INTEGER` | `42`, `-7` |
+| `DECIMAL` | `3.14`, `-0.5` |
+| `STRING` | `'ada'`, `'it''s'` |
+| `EQUAL`, `NOT_EQUAL`, `LESS`, `LESS_EQUAL`, `GREATER`, `GREATER_EQUAL` | `=`, `<>`/`!=`, `<`, `<=`, `>`, `>=` |
+| `COMMA`, `LPAREN`, `RPAREN`, `STAR`, `SEMICOLON` | `,`, `(`, `)`, `*`, `;` |
+| `EOF` | Final de la entrada |
+
+`EOF` es un token centinela distinto del punto y coma: el `;` se clasifica como
+`SEMICOLON` y `EOF` se agrega después, incluso si la sentencia no termina en `;`. La tabla
+muestra ambas filas y el flujo resumido termina con `<EOF>`.
+
+Palabras reservadas: `add`, `alter`, `and`, `bigint`, `column`, `create`, `decimal`,
+`delete`, `drop`, `exists`, `from`, `if`, `index`, `insert`, `int8`, `into`, `is`, `key`,
+`not`, `null`, `numeric`, `or`, `primary`, `select`, `set`, `table`, `text`, `unique`,
+`update`, `values`, `varchar`, `where`.
+
+### Posiciones y errores
+
+`Token::position` es un offset de byte en base 1. La aplicación lo convierte a
+`línea:columna` para mostrarlo; `EOF` apunta a `tamaño + 1`. El lexer es todo o nada: ante
+un error no devuelve un vector parcial de tokens. La salida muestra `SQLSTATE`, mensaje,
+línea, columna y un `^` bajo el carácter problemático. En modo estático un error léxico
+termina con código `1`; los errores de uso o de archivo terminan con `2`.
+
+### Colores
+
+| Color | Categoría |
+|:---|:---|
+| Cian | Palabra reservada |
+| Azul | Identificador |
+| Amarillo | Entero |
+| Magenta | Decimal |
+| Verde | Cadena |
+| Rojo | Operador |
+| Gris | Puntuación |
+| Gris claro | `EOF` |
+
+La paleta usa truecolor con tonos claros, pensada para terminales de fondo oscuro.
+
+Las pruebas del analizador (26 casos de lexer dentro de la suite SQL) se ejecutan con:
+
+```bash
+xmake test
 ```
 
 <br>
@@ -166,7 +266,7 @@ Abre [http://localhost:8080](http://localhost:8080) en el navegador para interac
 
 ### Pruebas automatizadas (GoogleTest)
 
-La suite de pruebas contiene **78 casos automatizados** cubriendo desbordamiento de nodos, división de raíz, inserciones masivas ($10^4$ y $10^5$ claves), integridad de `RowID`, serialización de tuplas, validación de esquemas y rutas de la API con AddressSanitizer y UndefinedBehaviorSanitizer:
+La suite de pruebas contiene **374 casos automatizados** cubriendo desbordamiento de nodos, división de raíz, inserciones masivas ($10^4$ y $10^5$ claves), integridad de `RowID`, serialización de tuplas, validación de esquemas y rutas de la API con AddressSanitizer y UndefinedBehaviorSanitizer:
 
 ```bash
 # Ejecutar la suite completa de pruebas unitarias
@@ -200,13 +300,15 @@ kravidb/
 ├── assets/                   # Recursos gráficos (banner, diagramas)
 ├── apps/
 │   ├── cli/main.cpp          # Punto de entrada de la CLI
-│   └── api/main.cpp          # Punto de entrada del servidor HTTP
+│   ├── api/main.cpp          # Punto de entrada del servidor HTTP
+│   └── sql_lexer/main.cpp    # Visor de tokens SQL con FTXUI
 ├── benchmarks/               # Arnés de rendimiento Google Benchmark
 │   └── benchmark.cpp         # Comparativa Index Scan vs Full Table Scan
 ├── docs/
 │   └── md/                   # Documentación generada con `xmake docs` (ignorada)
 ├── src/
 │   ├── kravidb.cppm          # Preludio público exportador del motor
+│   ├── sql/                  # Lexer, parser y analyzer SQL
 │   ├── api/                  # API HTTP REST (cpp-httplib)
 │   │   ├── json.{cpp,cppm}   # Serializador JSON ligero
 │   │   ├── request.*         # Parser del subconjunto JSON de las rutas
@@ -226,7 +328,7 @@ kravidb/
 │       ├── schema.cppm       # Definición de columnas y catálogo de tipos
 │       ├── table.{cpp,cppm}  # Abstracción de tabla con validación de tuplas
 │       └── tuple.cppm        # Serializador binario INT y VARCHAR
-├── tests/                    # Suite de 91 pruebas unitarias con GoogleTest
+├── tests/                    # Suite de 374 pruebas unitarias con GoogleTest
 ├── web/                      # Visualizador interactivo en Svelte + Vite
 ├── .github/workflows/
 │   └── ci.yml                # Pipeline de integración continua

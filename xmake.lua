@@ -13,6 +13,7 @@ end
 add_requires("gtest", { system = false, configs = { main = true } })
 add_requires("benchmark", { system = false })
 add_requires("cpp-httplib")
+add_requires("ftxui 7.0.3")
 
 function kravidb_common()
 	set_languages("c++23")
@@ -83,6 +84,16 @@ set_rundir("$(projectdir)")
 
 add_files("apps/api/main.cpp")
 add_packages("cpp-httplib")
+add_deps("kravidb_lib")
+
+target("kravidb_lexer")
+set_kind("binary")
+kravidb_common()
+kravidb_mode(true)
+set_rundir("$(projectdir)")
+
+add_files("apps/sql_lexer/main.cpp")
+add_packages("ftxui", {components = {"screen", "dom", "component"}})
 add_deps("kravidb_lib")
 
 task("lint")
