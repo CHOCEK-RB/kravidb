@@ -51,6 +51,9 @@ export import storage.wal;
 /// \brief File-backed write-ahead log (`FileWal`).
 export import storage.file_wal;
 
+/// \brief Data directory, control file and instance lock (`DataDirectory`).
+export import storage.control;
+
 /// \brief Statement transaction contract (`TransactionManager`, `Transaction`).
 export import storage.transaction;
 
