@@ -442,6 +442,51 @@ TEST_F(SqlAnalyzerTest, PrepareQueryReturnsParserErrorsUnchanged) {
   expect_error(text, sqlstate::feature_not_supported, position_of(text, "LIMIT"));
 }
 
+TEST_F(SqlAnalyzerTest, ValidatesCreateTableBeforeMutatingCatalog) {
+  auto valid =
+      sql::prepare_statement("CREATE TABLE invoices (id BIGINT PRIMARY KEY, total DECIMAL(10,2))",
+                             catalog(), transaction());
+  ASSERT_TRUE(valid.has_value()) << valid.error().message;
+  const auto& command = std::get<CreateTableCommand>(valid.value());
+  EXPECT_EQ(command.definition.primary_key, "id");
+  EXPECT_FALSE(catalog().lookup_relation(transaction(), "invoices").has_value());
+
+  auto varchar_pk =
+      sql::prepare_statement("CREATE TABLE bad (id VARCHAR PRIMARY KEY)", catalog(), transaction());
+  ASSERT_FALSE(varchar_pk.has_value());
+  EXPECT_EQ(varchar_pk.error().sqlstate, sqlstate::feature_not_supported);
+  EXPECT_FALSE(catalog().lookup_relation(transaction(), "bad").has_value());
+}
+
+TEST_F(SqlAnalyzerTest, RejectsInvalidCreateTableConstraints) {
+  auto misplaced = sql::prepare_statement("CREATE TABLE bad (name VARCHAR, id BIGINT PRIMARY KEY)",
+                                          catalog(), transaction());
+  ASSERT_FALSE(misplaced.has_value());
+  EXPECT_EQ(misplaced.error().sqlstate, sqlstate::feature_not_supported);
+
+  auto duplicate = sql::prepare_statement("CREATE TABLE bad (id BIGINT PRIMARY KEY, id VARCHAR)",
+                                          catalog(), transaction());
+  ASSERT_FALSE(duplicate.has_value());
+  EXPECT_EQ(duplicate.error().sqlstate, sqlstate::duplicate_column);
+
+  auto decimal = sql::prepare_statement(
+      "CREATE TABLE bad (id BIGINT PRIMARY KEY, amount DECIMAL(2,3))", catalog(), transaction());
+  ASSERT_FALSE(decimal.has_value());
+  EXPECT_EQ(decimal.error().sqlstate, sqlstate::invalid_parameter_value);
+}
+
+TEST_F(SqlAnalyzerTest, AllowsIndexesOnlyOnBigintColumns) {
+  auto valid = sql::prepare_statement("CREATE INDEX products_stock_idx ON products (stock)",
+                                      catalog(), transaction());
+  ASSERT_TRUE(valid.has_value()) << valid.error().message;
+  EXPECT_EQ(std::get<CreateIndexCommand>(valid.value()).definition.column, "stock");
+
+  auto invalid = sql::prepare_statement("CREATE INDEX products_name_idx ON products (name)",
+                                        catalog(), transaction());
+  ASSERT_FALSE(invalid.has_value());
+  EXPECT_EQ(invalid.error().sqlstate, sqlstate::feature_not_supported);
+}
+
 // --- Relation cache ----------------------------------------------------------------------------
 
 TEST_F(SqlAnalyzerTest, RelCacheResolvesLikeTheCatalog) {

@@ -374,6 +374,141 @@ class Analyzer {
                     statement_position(statement));
 }
 
+[[nodiscard]] auto type_oid(const TypeName& type) -> storage::Oid {
+  switch (type.kind) {
+    case TypeNameKind::bigint:
+      return storage::int8_oid;
+    case TypeNameKind::varchar:
+      return storage::varchar_oid;
+    case TypeNameKind::decimal:
+      return storage::numeric_oid;
+  }
+  return storage::invalid_oid;
+}
+
+[[nodiscard]] auto attribute_from(const ColumnDef& column) -> SqlResult<AttributeDesc> {
+  std::int32_t typmod = unconstrained_typmod;
+  if (column.type.kind == TypeNameKind::decimal) {
+    if (!column.type.decimal.has_value() || column.type.decimal->precision == 0 ||
+        column.type.decimal->precision > max_decimal_precision ||
+        column.type.decimal->scale > column.type.decimal->precision) {
+      return std::unexpected{make_error(
+          sqlstate::invalid_parameter_value,
+          std::format("invalid DECIMAL precision or scale for column \"{}\"", column.name.name),
+          column.type.position)};
+    }
+    typmod = storage::encode_typmod(column.type.decimal->precision, column.type.decimal->scale);
+  }
+  return AttributeDesc{.name = column.name.name,
+                       .type_oid = type_oid(column.type),
+                       .attnum = 0,
+                       .not_null = column.is_primary_key,
+                       .typmod = typmod,
+                       .primary_key = column.is_primary_key};
+}
+
+[[nodiscard]] auto require_table(const storage::Catalog& catalog, storage::Transaction& transaction,
+                                 const Identifier& name) -> SqlResult<RelationDesc> {
+  auto relation = catalog.lookup_relation(transaction, name.name);
+  if (!relation.has_value()) {
+    return std::unexpected{make_error(sqlstate::undefined_table,
+                                      std::format("relation \"{}\" does not exist", name.name),
+                                      name.position)};
+  }
+  if (relation->kind != storage::RelKind::table) {
+    return std::unexpected{make_error(sqlstate::wrong_object_type,
+                                      std::format("\"{}\" is not a table", name.name),
+                                      name.position)};
+  }
+  return relation.value();
+}
+
+[[nodiscard]] auto require_attribute(const RelationDesc& relation, const Identifier& name)
+    -> SqlResult<AttributeDesc> {
+  const auto match = std::ranges::find_if(
+      relation.attributes,
+      [&name](const AttributeDesc& attribute) -> bool { return attribute.name == name.name; });
+  if (match == relation.attributes.end()) {
+    return std::unexpected{make_error(
+        sqlstate::undefined_column,
+        std::format("column \"{}\" of relation \"{}\" does not exist", name.name, relation.name),
+        name.position)};
+  }
+  return *match;
+}
+
+[[nodiscard]] auto analyze_create_table(const CreateTableStmt& create,
+                                        const storage::Catalog& catalog,
+                                        storage::Transaction& transaction)
+    -> SqlResult<AnalyzedStatement> {
+  if (catalog.lookup_relation(transaction, create.table.name).has_value()) {
+    return std::unexpected{make_error(
+        sqlstate::duplicate_table, std::format("relation \"{}\" already exists", create.table.name),
+        create.table.position)};
+  }
+  storage::TableDef definition{.name = create.table.name};
+  std::unordered_set<std::string> names;
+  std::size_t primary_keys = 0;
+  for (std::size_t index = 0; index < create.columns.size(); ++index) {
+    const auto& column = create.columns.at(index);
+    if (!names.insert(column.name.name).second) {
+      return std::unexpected{
+          make_error(sqlstate::duplicate_column,
+                     std::format("column \"{}\" specified more than once", column.name.name),
+                     column.name.position)};
+    }
+    if (column.is_primary_key) {
+      ++primary_keys;
+      if (index != 0 || column.type.kind != TypeNameKind::bigint) {
+        return std::unexpected{make_error(sqlstate::feature_not_supported,
+                                          "primary key must be the first BIGINT column",
+                                          column.name.position)};
+      }
+      definition.primary_key = column.name.name;
+    }
+    auto attribute = attribute_from(column);
+    if (!attribute.has_value()) {
+      return std::unexpected{std::move(attribute.error())};
+    }
+    definition.attributes.push_back(std::move(attribute.value()));
+  }
+  if (primary_keys != 1) {
+    return std::unexpected{make_error(sqlstate::feature_not_supported,
+                                      "CREATE TABLE requires exactly one primary key",
+                                      create.table.position)};
+  }
+  return AnalyzedStatement{CreateTableCommand{.definition = std::move(definition)}};
+}
+
+[[nodiscard]] auto analyze_create_index(const CreateIndexStmt& create,
+                                        const storage::Catalog& catalog,
+                                        storage::Transaction& transaction)
+    -> SqlResult<AnalyzedStatement> {
+  if (catalog.lookup_relation(transaction, create.index.name).has_value()) {
+    return std::unexpected{make_error(
+        sqlstate::duplicate_table, std::format("relation \"{}\" already exists", create.index.name),
+        create.index.position)};
+  }
+  auto relation = require_table(catalog, transaction, create.table);
+  if (!relation.has_value()) {
+    return std::unexpected{std::move(relation.error())};
+  }
+  auto attribute = require_attribute(relation.value(), create.column);
+  if (!attribute.has_value()) {
+    return std::unexpected{std::move(attribute.error())};
+  }
+  if (attribute->type_oid != storage::int8_oid) {
+    return std::unexpected{make_error(sqlstate::feature_not_supported,
+                                      "indexes are supported only on BIGINT columns",
+                                      create.column.position)};
+  }
+  return AnalyzedStatement{
+      CreateIndexCommand{.definition = storage::IndexDef{.relation = relation->oid,
+                                                         .name = create.index.name,
+                                                         .column = create.column.name,
+                                                         .unique = create.unique}}};
+}
+
 /// \brief Output columns of `select`; `*` expands to every column in `attnum` order.
 [[nodiscard]] auto resolve_targets(const SelectStmt& select, const RelationDesc& relation,
                                    const Analyzer& analyzer)
@@ -491,6 +626,33 @@ auto analyze(const Stmt& statement, const storage::RelCache& cache) -> SqlResult
     return analyze_select(*select, cache);
   }
   return std::unexpected{unsupported_statement(statement)};
+}
+
+auto analyze_statement(const Stmt& statement, const storage::Catalog& catalog,
+                       storage::Transaction& transaction) -> SqlResult<AnalyzedStatement> {
+  if (const auto* select = std::get_if<SelectStmt>(&statement)) {
+    auto query = analyze_select(*select, catalog, transaction);
+    if (!query.has_value()) {
+      return std::unexpected{std::move(query.error())};
+    }
+    return AnalyzedStatement{std::move(query.value())};
+  }
+  if (const auto* create = std::get_if<CreateTableStmt>(&statement)) {
+    return analyze_create_table(*create, catalog, transaction);
+  }
+  if (const auto* create = std::get_if<CreateIndexStmt>(&statement)) {
+    return analyze_create_index(*create, catalog, transaction);
+  }
+  return std::unexpected{unsupported_statement(statement)};
+}
+
+auto prepare_statement(std::string_view text, const storage::Catalog& catalog,
+                       storage::Transaction& transaction) -> SqlResult<AnalyzedStatement> {
+  auto statement = parse(text);
+  if (!statement.has_value()) {
+    return std::unexpected{std::move(statement.error())};
+  }
+  return analyze_statement(statement.value(), catalog, transaction);
 }
 
 auto prepare_query(std::string_view text, const storage::Catalog& catalog,
