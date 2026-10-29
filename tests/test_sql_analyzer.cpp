@@ -487,6 +487,46 @@ TEST_F(SqlAnalyzerTest, AllowsIndexesOnlyOnBigintColumns) {
   EXPECT_EQ(invalid.error().sqlstate, sqlstate::feature_not_supported);
 }
 
+TEST_F(SqlAnalyzerTest, ResolvesInsertColumnsAndTypes) {
+  auto valid = sql::prepare_statement(
+      "INSERT INTO products (id, name, price, stock, rating) VALUES (1, 'pen', 2.50, 10, 5)",
+      catalog(), transaction());
+  ASSERT_TRUE(valid.has_value()) << valid.error().message;
+  const auto& insert = std::get<InsertCommand>(valid.value());
+  ASSERT_EQ(insert.values.size(), 5U);
+  EXPECT_EQ(insert.values.at(1).attribute.name, "name");
+
+  auto duplicate = sql::prepare_statement("INSERT INTO products (id, id) VALUES (1, 2)", catalog(),
+                                          transaction());
+  ASSERT_FALSE(duplicate.has_value());
+  EXPECT_EQ(duplicate.error().sqlstate, sqlstate::duplicate_column);
+
+  auto mismatch =
+      sql::prepare_statement("INSERT INTO products (id) VALUES ('one')", catalog(), transaction());
+  ASSERT_FALSE(mismatch.has_value());
+  EXPECT_EQ(mismatch.error().sqlstate, sqlstate::datatype_mismatch);
+}
+
+TEST_F(SqlAnalyzerTest, RejectsNullPrimaryKeyBeforeExecution) {
+  auto result =
+      sql::prepare_statement("INSERT INTO products (id) VALUES (NULL)", catalog(), transaction());
+  ASSERT_FALSE(result.has_value());
+  EXPECT_EQ(result.error().sqlstate, sqlstate::not_null_violation);
+}
+
+TEST_F(SqlAnalyzerTest, ValidatesDropAndAlterDependencies) {
+  auto missing = sql::prepare_statement("DROP TABLE missing", catalog(), transaction());
+  ASSERT_FALSE(missing.has_value());
+  EXPECT_EQ(missing.error().sqlstate, sqlstate::undefined_object);
+
+  auto ignored = sql::prepare_statement("DROP TABLE IF EXISTS missing", catalog(), transaction());
+  ASSERT_TRUE(ignored.has_value()) << ignored.error().message;
+
+  auto pk = sql::prepare_statement("ALTER TABLE products DROP COLUMN id", catalog(), transaction());
+  ASSERT_FALSE(pk.has_value());
+  EXPECT_EQ(pk.error().sqlstate, sqlstate::dependent_objects_still_exist);
+}
+
 // --- Relation cache ----------------------------------------------------------------------------
 
 TEST_F(SqlAnalyzerTest, RelCacheResolvesLikeTheCatalog) {
