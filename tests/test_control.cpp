@@ -34,6 +34,7 @@ constexpr std::uint64_t test_base_id = 11;
 constexpr std::uint64_t test_previous_base = 22;
 constexpr std::uint64_t test_checkpoint_time = 123456789;
 constexpr std::size_t control_crc_offset = 84;
+constexpr std::size_t control_magic_offset = 0;
 constexpr std::size_t control_data_offset = 12;
 constexpr std::size_t control_format_offset = 8;
 constexpr std::uint8_t flip_mask = 0xFFU;
@@ -341,6 +342,30 @@ TEST(DataDirectory, OpenRejectsCorruptControl) {
   }
   flip_byte(directory.path() / "kd_control", control_data_offset);
   EXPECT_THROW(static_cast<void>(DataDirectory::open(directory.path())), std::runtime_error);
+}
+
+TEST(ControlFileError, IncludesPathForMagicFormatAndCrc) {
+  const std::array<std::pair<std::size_t, std::string_view>, 3> cases{{
+      {control_magic_offset, "invalid magic"},
+      {control_format_offset, "unsupported format version"},
+      {control_crc_offset, "CRC mismatch"},
+  }};
+  for (const auto& [offset, reason] : cases) {
+    TempDirectory directory;
+    {
+      auto data = DataDirectory::bootstrap(directory.path());
+      static_cast<void>(data);
+    }
+    flip_byte(directory.path() / "kd_control", offset);
+    try {
+      static_cast<void>(DataDirectory::open(directory.path()));
+      FAIL() << "open() accepted a corrupt control file at offset " << offset;
+    } catch (const std::runtime_error& error) {
+      const std::string message{error.what()};
+      EXPECT_NE(message.find(directory.path().string()), std::string::npos) << message;
+      EXPECT_NE(message.find(reason), std::string::npos) << message;
+    }
+  }
 }
 
 TEST(DataDirectory, OpenUninitializedFails) {

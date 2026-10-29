@@ -302,7 +302,16 @@ auto read_control_file(const std::filesystem::path& path) -> ControlFile {
   std::array<std::byte, control_header_size> bytes{};
   std::ranges::transform(raw, bytes.begin(),
                          [](char value) { return std::byte{static_cast<unsigned char>(value)}; });
-  return decode_control(bytes);
+  try {
+    return decode_control(bytes);
+  } catch (const std::runtime_error& error) {
+    std::string reason{error.what()};
+    constexpr std::string_view prefix{"kd_control: "};
+    if (reason.starts_with(prefix)) {
+      reason.erase(0, prefix.size());
+    }
+    throw std::runtime_error{"kd_control '" + path.string() + "': " + reason};
+  }
 }
 
 auto validate_version_file(const std::filesystem::path& path) -> void {
