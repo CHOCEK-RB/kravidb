@@ -258,11 +258,13 @@ class Analyzer {
   }
 
   [[nodiscard]] auto analyze_expr(const Expr& expr) -> SqlResult<std::unique_ptr<TypedExpr>> {
-    return std::visit(
-        [this](const auto& node) -> SqlResult<std::unique_ptr<TypedExpr>> {
-          return analyze_node(node);
-        },
-        expr.node);
+    if (const auto* column = std::get_if<ColumnRef>(&expr.node)) {
+      return analyze_node(*column);
+    }
+    if (const auto* literal = std::get_if<Literal>(&expr.node)) {
+      return analyze_node(*literal);
+    }
+    return analyze_node(std::get<BinaryExpr>(expr.node));
   }
 
   private:
