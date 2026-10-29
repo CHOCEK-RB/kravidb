@@ -277,124 +277,124 @@ TEST(SqlParser, ParseTokensAcceptsLexerOutput) {
 
 TEST(SqlParser, RejectsJoinOrderByAndLimitAsUnsupported) {
   constexpr std::string_view join = "SELECT * FROM a JOIN b";
-  expect_error(join, sqlstate_feature_not_supported, position_of(join, "JOIN"));
+  expect_error(join, sqlstate::feature_not_supported, position_of(join, "JOIN"));
 
   constexpr std::string_view inner = "SELECT * FROM a INNER JOIN b";
-  expect_error(inner, sqlstate_feature_not_supported, position_of(inner, "INNER"));
+  expect_error(inner, sqlstate::feature_not_supported, position_of(inner, "INNER"));
 
   constexpr std::string_view order = "SELECT * FROM t ORDER BY a";
-  expect_error(order, sqlstate_feature_not_supported, position_of(order, "ORDER"));
+  expect_error(order, sqlstate::feature_not_supported, position_of(order, "ORDER"));
 
   constexpr std::string_view limit = "SELECT * FROM t WHERE a = 1 LIMIT 5";
-  expect_error(limit, sqlstate_feature_not_supported, position_of(limit, "LIMIT"));
+  expect_error(limit, sqlstate::feature_not_supported, position_of(limit, "LIMIT"));
 }
 
 TEST(SqlParser, RejectsTwoStatements) {
   constexpr std::string_view text = "SELECT * FROM a; SELECT * FROM b";
-  expect_error(text, sqlstate_syntax_error, position_of(text, "SELECT", 1));
+  expect_error(text, sqlstate::syntax_error, position_of(text, "SELECT", 1));
 
   constexpr std::string_view doubled = "SELECT * FROM a;;";
-  expect_error(doubled, sqlstate_syntax_error, position_of(doubled, ";", 1));
+  expect_error(doubled, sqlstate::syntax_error, position_of(doubled, ";", 1));
 }
 
 TEST(SqlParser, RejectsTwoStatementsWithoutSeparator) {
   constexpr std::string_view text = "SELECT * FROM a SELECT * FROM b";
-  expect_error(text, sqlstate_syntax_error, position_of(text, "SELECT", 1));
+  expect_error(text, sqlstate::syntax_error, position_of(text, "SELECT", 1));
 }
 
 TEST(SqlParser, RejectsEmptyInput) {
-  expect_error("", sqlstate_syntax_error, SourcePosition{1});
-  expect_error("   ", sqlstate_syntax_error, end_position("   "));
-  expect_error(";", sqlstate_syntax_error, SourcePosition{1});
+  expect_error("", sqlstate::syntax_error, SourcePosition{1});
+  expect_error("   ", sqlstate::syntax_error, end_position("   "));
+  expect_error(";", sqlstate::syntax_error, SourcePosition{1});
 }
 
 TEST(SqlParser, ReportsSyntaxErrorsAtTheOffendingToken) {
   constexpr std::string_view no_from = "SELECT a";
-  expect_error(no_from, sqlstate_syntax_error, end_position(no_from));
+  expect_error(no_from, sqlstate::syntax_error, end_position(no_from));
 
   constexpr std::string_view no_table = "SELECT a FROM";
-  expect_error(no_table, sqlstate_syntax_error, end_position(no_table));
+  expect_error(no_table, sqlstate::syntax_error, end_position(no_table));
 
   constexpr std::string_view no_targets = "SELECT FROM t";
-  expect_error(no_targets, sqlstate_syntax_error, position_of(no_targets, "FROM"));
+  expect_error(no_targets, sqlstate::syntax_error, position_of(no_targets, "FROM"));
 
   constexpr std::string_view trailing_comma = "SELECT a, FROM t";
-  expect_error(trailing_comma, sqlstate_syntax_error, position_of(trailing_comma, "FROM"));
+  expect_error(trailing_comma, sqlstate::syntax_error, position_of(trailing_comma, "FROM"));
 
   constexpr std::string_view keyword_table = "SELECT a FROM where";
-  expect_error(keyword_table, sqlstate_syntax_error, position_of(keyword_table, "where"));
+  expect_error(keyword_table, sqlstate::syntax_error, position_of(keyword_table, "where"));
 
   constexpr std::string_view empty_where = "SELECT a FROM t WHERE";
-  expect_error(empty_where, sqlstate_syntax_error, end_position(empty_where));
+  expect_error(empty_where, sqlstate::syntax_error, end_position(empty_where));
 
   constexpr std::string_view missing_operand = "SELECT a FROM t WHERE a =";
-  expect_error(missing_operand, sqlstate_syntax_error, end_position(missing_operand));
+  expect_error(missing_operand, sqlstate::syntax_error, end_position(missing_operand));
 
   constexpr std::string_view dangling_and = "SELECT a FROM t WHERE a = 1 AND";
-  expect_error(dangling_and, sqlstate_syntax_error, end_position(dangling_and));
+  expect_error(dangling_and, sqlstate::syntax_error, end_position(dangling_and));
 
   constexpr std::string_view chained = "SELECT a FROM t WHERE a = 1 = 2";
-  expect_error(chained, sqlstate_syntax_error, position_of(chained, "=", 1));
+  expect_error(chained, sqlstate::syntax_error, position_of(chained, "=", 1));
 
   constexpr std::string_view is_value = "SELECT a FROM t WHERE a IS 5";
-  expect_error(is_value, sqlstate_syntax_error, position_of(is_value, "5"));
+  expect_error(is_value, sqlstate::syntax_error, position_of(is_value, "5"));
 
   constexpr std::string_view is_not_value = "SELECT a FROM t WHERE a IS NOT 5";
-  expect_error(is_not_value, sqlstate_syntax_error, position_of(is_not_value, "5"));
+  expect_error(is_not_value, sqlstate::syntax_error, position_of(is_not_value, "5"));
 
   constexpr std::string_view unclosed = "SELECT a FROM t WHERE (a = 1";
-  expect_error(unclosed, sqlstate_syntax_error, end_position(unclosed));
+  expect_error(unclosed, sqlstate::syntax_error, end_position(unclosed));
 
   constexpr std::string_view unopened = "SELECT a FROM t WHERE a = 1)";
-  expect_error(unopened, sqlstate_syntax_error, position_of(unopened, ")"));
+  expect_error(unopened, sqlstate::syntax_error, position_of(unopened, ")"));
 
   constexpr std::string_view empty_parens = "SELECT a FROM t WHERE ()";
-  expect_error(empty_parens, sqlstate_syntax_error, position_of(empty_parens, ")"));
+  expect_error(empty_parens, sqlstate::syntax_error, position_of(empty_parens, ")"));
 
   constexpr std::string_view keyword_operand = "SELECT a FROM t WHERE a = from";
-  expect_error(keyword_operand, sqlstate_syntax_error, position_of(keyword_operand, "from"));
+  expect_error(keyword_operand, sqlstate::syntax_error, position_of(keyword_operand, "from"));
 }
 
 TEST(SqlParser, ReportsUnsupportedFeaturesAtTheirToken) {
   constexpr std::string_view aggregate = "SELECT count(*) FROM t";
-  expect_error(aggregate, sqlstate_feature_not_supported, position_of(aggregate, "count"));
+  expect_error(aggregate, sqlstate::feature_not_supported, position_of(aggregate, "count"));
 
   constexpr std::string_view distinct = "SELECT DISTINCT a FROM t";
-  expect_error(distinct, sqlstate_feature_not_supported, position_of(distinct, "DISTINCT"));
+  expect_error(distinct, sqlstate::feature_not_supported, position_of(distinct, "DISTINCT"));
 
   constexpr std::string_view alias = "SELECT a AS b FROM t";
-  expect_error(alias, sqlstate_feature_not_supported, position_of(alias, "AS"));
+  expect_error(alias, sqlstate::feature_not_supported, position_of(alias, "AS"));
 
   constexpr std::string_view tables = "SELECT * FROM a, b";
-  expect_error(tables, sqlstate_feature_not_supported, position_of(tables, ","));
+  expect_error(tables, sqlstate::feature_not_supported, position_of(tables, ","));
 
   constexpr std::string_view subquery = "SELECT * FROM t WHERE (SELECT a FROM u) = 1";
-  expect_error(subquery, sqlstate_feature_not_supported, position_of(subquery, "SELECT", 1));
+  expect_error(subquery, sqlstate::feature_not_supported, position_of(subquery, "SELECT", 1));
 
   constexpr std::string_view negation = "SELECT * FROM t WHERE NOT a = 1";
-  expect_error(negation, sqlstate_feature_not_supported, position_of(negation, "NOT"));
+  expect_error(negation, sqlstate::feature_not_supported, position_of(negation, "NOT"));
 
   constexpr std::string_view in_list = "SELECT * FROM t WHERE a IN (1, 2)";
-  expect_error(in_list, sqlstate_feature_not_supported, position_of(in_list, "IN"));
+  expect_error(in_list, sqlstate::feature_not_supported, position_of(in_list, "IN"));
 
   constexpr std::string_view mixed_star = "SELECT a, * FROM t";
-  expect_error(mixed_star, sqlstate_feature_not_supported, position_of(mixed_star, "*"));
+  expect_error(mixed_star, sqlstate::feature_not_supported, position_of(mixed_star, "*"));
 }
 
 TEST(SqlParser, RejectsStatementsOtherThanSelect) {
   constexpr std::string_view insert = "INSERT INTO t VALUES (1)";
-  expect_error(insert, sqlstate_feature_not_supported, SourcePosition{1});
+  expect_error(insert, sqlstate::feature_not_supported, SourcePosition{1});
 
   constexpr std::string_view begin = "BEGIN";
-  expect_error(begin, sqlstate_feature_not_supported, SourcePosition{1});
+  expect_error(begin, sqlstate::feature_not_supported, SourcePosition{1});
 
   constexpr std::string_view unknown = "EXPLAIN SELECT * FROM t";
-  expect_error(unknown, sqlstate_syntax_error, SourcePosition{1});
+  expect_error(unknown, sqlstate::syntax_error, SourcePosition{1});
 }
 
 TEST(SqlParser, PropagatesLexicalErrors) {
   constexpr std::string_view text = "SELECT * FROM t WHERE a = 'open";
-  expect_error(text, sqlstate_syntax_error, position_of(text, "'"));
+  expect_error(text, sqlstate::syntax_error, position_of(text, "'"));
 }
 
 TEST(SqlParser, RejectsExcessiveNesting) {
@@ -402,7 +402,7 @@ TEST(SqlParser, RejectsExcessiveNesting) {
                                        std::string(1000, ')'));
   auto statement = sql::parse(text);
   ASSERT_FALSE(statement.has_value());
-  EXPECT_EQ(statement.error().sqlstate, "54001");
+  EXPECT_EQ(statement.error().sqlstate, sqlstate::statement_too_complex);
 }
 
 TEST(SqlParser, ParseTokensRejectsSequenceWithoutEndOfInput) {
@@ -410,11 +410,11 @@ TEST(SqlParser, ParseTokensRejectsSequenceWithoutEndOfInput) {
       Token{TokenKind::keyword, "select", SourcePosition{1}, Keyword::select}};
   auto statement = sql::parse_tokens(tokens);
   ASSERT_FALSE(statement.has_value());
-  EXPECT_EQ(statement.error().sqlstate, sqlstate_syntax_error);
+  EXPECT_EQ(statement.error().sqlstate, sqlstate::syntax_error);
 
   auto empty = sql::parse_tokens(std::span<const Token>{});
   ASSERT_FALSE(empty.has_value());
-  EXPECT_EQ(empty.error().sqlstate, sqlstate_syntax_error);
+  EXPECT_EQ(empty.error().sqlstate, sqlstate::syntax_error);
 }
 
 }  // namespace
