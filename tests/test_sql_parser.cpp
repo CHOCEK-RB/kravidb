@@ -467,9 +467,9 @@ TEST(SqlParser, ReportsUnsupportedFeaturesAtTheirToken) {
   expect_error(mixed_star, sqlstate::feature_not_supported, position_of(mixed_star, "*"));
 }
 
-TEST(SqlParser, RejectsStatementsOtherThanSelect) {
-  constexpr std::string_view insert = "INSERT INTO t VALUES (1)";
-  expect_error(insert, sqlstate::feature_not_supported, SourcePosition{1});
+TEST(SqlParser, RejectsUnsupportedStatements) {
+  constexpr std::string_view commit = "COMMIT";
+  expect_error(commit, sqlstate::feature_not_supported, SourcePosition{1});
 
   constexpr std::string_view begin = "BEGIN";
   expect_error(begin, sqlstate::feature_not_supported, SourcePosition{1});
