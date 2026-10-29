@@ -273,6 +273,45 @@ TEST(SqlParser, ParseTokensAcceptsLexerOutput) {
   EXPECT_TRUE(std::holds_alternative<SelectStmt>(statement.value()));
 }
 
+TEST(SqlParser, ParsesInsertWithAndWithoutColumns) {
+  auto explicit_columns = sql::parse("INSERT INTO users (id, name) VALUES (1, 'Ana')");
+  ASSERT_TRUE(explicit_columns.has_value()) << explicit_columns.error().message;
+  const auto& insert = std::get<InsertStmt>(explicit_columns.value());
+  EXPECT_EQ(insert.table.name, "users");
+  ASSERT_EQ(insert.columns.size(), 2U);
+  EXPECT_EQ(insert.columns.at(0).name, "id");
+  ASSERT_EQ(insert.values.size(), 2U);
+
+  auto implicit_columns = sql::parse("INSERT INTO users VALUES (1, 'Ana')");
+  ASSERT_TRUE(implicit_columns.has_value()) << implicit_columns.error().message;
+  EXPECT_TRUE(std::get<InsertStmt>(implicit_columns.value()).columns.empty());
+}
+
+TEST(SqlParser, ParsesUpdateAndDeleteWithFilters) {
+  auto update = sql::parse("UPDATE users SET name = 'Ana', age = 20 WHERE id = 1");
+  ASSERT_TRUE(update.has_value()) << update.error().message;
+  const auto& update_stmt = std::get<UpdateStmt>(update.value());
+  ASSERT_EQ(update_stmt.assignments.size(), 2U);
+  EXPECT_EQ(update_stmt.assignments.at(1).column.name, "age");
+  ASSERT_NE(update_stmt.where, nullptr);
+
+  auto delete_ = sql::parse("DELETE FROM users WHERE id = 1");
+  ASSERT_TRUE(delete_.has_value()) << delete_.error().message;
+  EXPECT_NE(std::get<DeleteStmt>(delete_.value()).where, nullptr);
+}
+
+TEST(SqlParser, RejectsMalformedDml) {
+  constexpr std::string_view empty_columns = "INSERT INTO t () VALUES (1)";
+  expect_error(empty_columns, sqlstate::syntax_error, position_of(empty_columns, ")"));
+
+  constexpr std::string_view trailing_value = "INSERT INTO t VALUES (1,)";
+  expect_error(trailing_value, sqlstate::syntax_error, position_of(trailing_value, ")"));
+
+  constexpr std::string_view missing_assignment = "UPDATE t SET WHERE id = 1";
+  expect_error(missing_assignment, sqlstate::syntax_error,
+               position_of(missing_assignment, "WHERE"));
+}
+
 // --- Rejected statements -----------------------------------------------------------------------
 
 TEST(SqlParser, RejectsJoinOrderByAndLimitAsUnsupported) {
