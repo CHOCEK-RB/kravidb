@@ -76,7 +76,7 @@ class RecordingWal final : public Wal {
 
   [[nodiscard]] auto needs_flush(LSN upto) const -> bool override { return upto > flushed_; }
 
-  auto read(LSN) -> WalRecord override {
+  auto read(LSN) -> WalReadResult override {
     throw std::logic_error{"RecordingWal does not store records"};
   }
 

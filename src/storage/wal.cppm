@@ -30,6 +30,49 @@ inline constexpr std::size_t wal_segment_size = std::size_t{16} * 1024 * 1024;
 /// \brief Size of a WAL page.
 inline constexpr std::size_t wal_page_size = std::size_t{8} * 1024;
 
+/// \brief Size of a WAL page header.
+inline constexpr std::size_t wal_page_header_size = 24;
+
+/// \brief Bytes of record data that fit in one WAL page.
+inline constexpr std::size_t wal_page_payload_size = wal_page_size - wal_page_header_size;
+
+/// \brief Size of the long header stored in the first page of segment 0.
+inline constexpr std::size_t wal_long_page_header_size = 40;
+
+/// \brief Magic value of a WAL page header.
+inline constexpr std::uint16_t wal_page_magic = 0x4B44;
+
+/// \brief Page info flag: the page holds the long header.
+inline constexpr std::uint16_t wal_page_info_long_header = 0x0001;
+
+/// \brief Page info flag: the page starts with the continuation of a record.
+inline constexpr std::uint16_t wal_page_info_continuation = 0x0002;
+
+/// \brief Placeholder system identifier until the control file exists.
+inline constexpr std::uint64_t wal_system_identifier = 1;
+
+/// \brief Header at the start of every WAL page.
+struct WalPageHeader {
+  std::uint16_t magic{0};
+  std::uint16_t info{0};
+  std::uint32_t timeline{0};
+  std::uint64_t pageaddr{0};
+  std::uint32_t rem_len{0};
+  std::uint32_t reserved{0};
+};
+
+static_assert(sizeof(WalPageHeader) == wal_page_header_size);
+
+/// \brief Long header at the start of the first page of segment 0.
+struct WalLongPageHeader {
+  WalPageHeader page;
+  std::uint64_t sysid{0};
+  std::uint32_t segment_size{0};
+  std::uint32_t block_size{0};
+};
+
+static_assert(sizeof(WalLongPageHeader) == wal_long_page_header_size);
+
 /// \brief Relation block referenced by a WAL record.
 struct WalBlockRef {
   std::uint8_t id{0};
@@ -46,6 +89,12 @@ struct WalRecord {
   std::uint32_t xid{0};
   std::vector<WalBlockRef> blocks;
   std::vector<std::byte> main_data;
+};
+
+/// \brief A record read from the log and the physical LSN after it.
+struct WalReadResult {
+  WalRecord record;
+  LSN next_lsn{invalid_lsn};
 };
 
 /// \brief Contract of the write-ahead log.
@@ -70,8 +119,8 @@ class Wal {
   /// \brief True when records up to `upto` are not durable yet.
   [[nodiscard]] virtual auto needs_flush(LSN upto) const -> bool = 0;
 
-  /// \brief Reads the record that starts at `from`.
-  [[nodiscard]] virtual auto read(LSN from) -> WalRecord = 0;
+  /// \brief Reads the record that starts at `from` and the LSN after it.
+  [[nodiscard]] virtual auto read(LSN from) -> WalReadResult = 0;
 
   /// \brief Forces the next insert into a new segment.
   virtual auto switch_segment() -> void = 0;
@@ -89,7 +138,7 @@ class NoopWal final : public Wal {
   auto insert(const WalRecord& record) -> LSN override;
   auto flush(LSN upto) -> void override {}
   [[nodiscard]] auto needs_flush(LSN upto) const -> bool override { return false; }
-  [[nodiscard]] auto read(LSN from) -> WalRecord override;
+  [[nodiscard]] auto read(LSN from) -> WalReadResult override;
   auto switch_segment() -> void override {}
   auto recycle(LSN before) -> void override {}
   auto close() -> void override {}
@@ -102,7 +151,7 @@ inline auto NoopWal::insert(const WalRecord& record) -> LSN {
   return ++inserted_;
 }
 
-inline auto NoopWal::read(LSN from) -> WalRecord {
+inline auto NoopWal::read(LSN from) -> WalReadResult {
   throw std::logic_error{"NoopWal does not store records"};
 }
 
