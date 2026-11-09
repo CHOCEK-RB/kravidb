@@ -1,5 +1,5 @@
 /// \file
-/// \brief Recursive-descent parser for the supported SELECT statement.
+/// \brief SQL parser with LL(1) SELECT validation and iterative SELECT AST construction.
 ///
 /// \details Grammar accepted by `parse`:
 ///
@@ -25,6 +25,7 @@ import std;
 export import sql.ast;
 export import sql.error;
 export import sql.lexer;
+export import sql.select_ll1;
 
 export namespace kravidb::sql {
 
@@ -36,5 +37,12 @@ export namespace kravidb::sql {
 
 /// \brief Tokenizes and parses exactly one statement.
 [[nodiscard]] auto parse(std::string_view text) -> SqlResult<Stmt>;
+
+namespace detail {
+/// \brief Legacy recursive parser oracle for differential tests only.
+/// \details Bypasses LL(1); production callers must use parse/parse_tokens.
+[[nodiscard]] auto parse_tokens_recursive_reference(std::span<const Token> tokens)
+    -> SqlResult<Stmt>;
+}  // namespace detail
 
 }  // namespace kravidb::sql
