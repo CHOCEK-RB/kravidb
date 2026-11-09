@@ -70,6 +70,10 @@ struct TraceStep {
   std::size_t token_index{0};
   std::size_t stack_size{0};
   std::optional<std::size_t> production;
+  /// \brief Stack before the action; the top is the last element.
+  std::vector<Symbol> stack;
+  /// \brief Table cell used by an expansion, when applicable.
+  std::optional<Cell> cell;
 };
 
 using TraceCallback = std::function<void(const TraceStep&)>;

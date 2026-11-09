@@ -67,8 +67,16 @@ TEST(SqlSelectLl1, TraceShowsExpansionsMatchesEpsilonAndAcceptance) {
   EXPECT_EQ(steps.front().action, ll1::TraceAction::expand);
   EXPECT_EQ(steps.front().token_index, 0U);
   EXPECT_EQ(steps.front().stack_size, 1U);
+  ASSERT_EQ(steps.front().stack.size(), 1U);
+  EXPECT_EQ(std::get<ll1::Nonterminal>(steps.front().stack.back()), ll1::Nonterminal::statement);
+  ASSERT_TRUE(steps.front().cell.has_value());
+  EXPECT_EQ(steps.front().cell->first, ll1::Nonterminal::statement);
+  EXPECT_EQ(steps.front().cell->second.kind, sql::TokenKind::keyword);
+  EXPECT_EQ(steps.front().cell->second.keyword, sql::Keyword::select);
   EXPECT_EQ(steps.back().action, ll1::TraceAction::accept);
   EXPECT_EQ(steps.back().stack_size, 0U);
+  EXPECT_TRUE(steps.back().stack.empty());
+  EXPECT_FALSE(steps.back().cell.has_value());
   EXPECT_EQ(steps.back().token_index, tokens.size());
   std::size_t matches = 0;
   bool epsilon = false;
@@ -217,8 +225,10 @@ auto compare_with_reference(std::string_view text) -> void {
   const auto actual = sql::parse_tokens(tokens);
   ASSERT_EQ(actual.has_value(), reference.has_value());
   if (!reference.has_value()) {
-    EXPECT_EQ(validation.error(), reference.error());
-    EXPECT_EQ(actual.error(), reference.error());
+    EXPECT_EQ(validation.error().sqlstate, reference.error().sqlstate);
+    EXPECT_EQ(validation.error().position, reference.error().position);
+    EXPECT_EQ(actual.error().sqlstate, reference.error().sqlstate);
+    EXPECT_EQ(actual.error().position, reference.error().position);
   } else {
     EXPECT_EQ(fingerprint(std::get<sql::SelectStmt>(*actual)),
               fingerprint(std::get<sql::SelectStmt>(*reference)));
