@@ -388,6 +388,41 @@ TEST(SqlParser, RejectsTwoStatementsWithoutSeparator) {
   expect_error(text, sqlstate::syntax_error, position_of(text, "SELECT", 1));
 }
 
+TEST(SqlParser, ReportsLineColumnFoundTokenAndExpectedTokens) {
+  constexpr std::string_view missing_target = "SELECT FROM t";
+  auto target = sql::parse(missing_target);
+  ASSERT_FALSE(target.has_value());
+  EXPECT_EQ(target.error().sqlstate, sqlstate::syntax_error);
+  EXPECT_EQ(target.error().position.line, 1U);
+  EXPECT_EQ(target.error().position.column, 8U);
+  EXPECT_EQ(target.error().message,
+            "syntax error at line 1, column 8 at or near \"from\"; expected: *, identifier");
+
+  constexpr std::string_view multiline = "SELECT a,\nfrom";
+  auto line = sql::parse(multiline);
+  ASSERT_FALSE(line.has_value());
+  EXPECT_EQ(line.error().position.line, 2U);
+  EXPECT_EQ(line.error().position.column, 1U);
+  EXPECT_EQ(line.error().message,
+            "syntax error at line 2, column 1 at or near \"from\"; expected: identifier");
+
+  constexpr std::string_view missing_table = "SELECT a FROM";
+  auto eof = sql::parse(missing_table);
+  ASSERT_FALSE(eof.has_value());
+  EXPECT_EQ(eof.error().position.line, 1U);
+  EXPECT_EQ(eof.error().position.column, static_cast<std::size_t>(missing_table.size() + 1));
+  EXPECT_EQ(eof.error().message,
+            "syntax error at line 1, column 14 at end of input; expected: identifier");
+
+  constexpr std::string_view missing_null = "SELECT a FROM t WHERE a IS NOT";
+  auto null = sql::parse(missing_null);
+  ASSERT_FALSE(null.has_value());
+  EXPECT_EQ(null.error().position.line, 1U);
+  EXPECT_EQ(null.error().position.column, static_cast<std::size_t>(missing_null.size() + 1));
+  EXPECT_EQ(null.error().message,
+            "syntax error at line 1, column 31 at end of input; expected: NULL");
+}
+
 TEST(SqlParser, RejectsEmptyInput) {
   expect_error("", sqlstate::syntax_error, SourcePosition{1});
   expect_error("   ", sqlstate::syntax_error, end_position("   "));

@@ -96,6 +96,16 @@ add_files("apps/sql_lexer/main.cpp")
 add_packages("ftxui", {components = {"screen", "dom", "component"}})
 add_deps("kravidb_lib")
 
+target("kravidb_parser")
+set_kind("binary")
+kravidb_common()
+kravidb_mode(true)
+set_rundir("$(projectdir)")
+
+add_files("apps/sql_parser/main.cpp")
+add_packages("ftxui", {components = {"screen", "dom", "component"}})
+add_deps("kravidb_lib")
+
 task("lint")
 set_category("plugin")
 on_run(function()

@@ -60,15 +60,25 @@ constexpr std::array<std::pair<std::string_view, Keyword>, 32> keyword_table{
 
 class Lexer {
   public:
-  explicit Lexer(std::string_view text) : text_{text} {}
+  explicit Lexer(std::string_view text) : text_{text} {
+    line_starts_.push_back(0);
+    for (std::size_t offset = 0; offset < text_.size(); ++offset) {
+      if (text_.at(offset) == '\n') {
+        line_starts_.push_back(offset + 1);
+      }
+    }
+  }
 
   [[nodiscard]] auto run() -> SqlResult<std::vector<Token>>;
 
   private:
   [[nodiscard]] auto at_end() const noexcept -> bool { return index_ >= text_.size(); }
 
-  [[nodiscard]] static auto position(std::size_t offset) noexcept -> SourcePosition {
-    return SourcePosition{offset + 1};
+  [[nodiscard]] auto position(std::size_t offset) const noexcept -> SourcePosition {
+    const auto upper = std::ranges::upper_bound(line_starts_, offset);
+    const auto line = static_cast<std::size_t>(std::distance(line_starts_.begin(), upper));
+    const std::size_t line_start = line_starts_.at(line - 1);
+    return SourcePosition{.offset = offset + 1, .line = line, .column = offset - line_start + 1};
   }
 
   auto fail(std::string message, std::size_t offset) -> void {
@@ -91,6 +101,7 @@ class Lexer {
   std::size_t index_{0};
   std::vector<Token> tokens_;
   std::optional<SqlError> error_;
+  std::vector<std::size_t> line_starts_;
 };
 
 auto Lexer::run() -> SqlResult<std::vector<Token>> {
