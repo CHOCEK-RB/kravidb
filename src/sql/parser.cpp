@@ -19,45 +19,51 @@ struct UnsupportedWord {
 };
 
 /// \brief Words that start statements outside the supported subset.
-constexpr std::array<UnsupportedWord, 8> unsupported_statement_words{{
-    {.word = "begin", .feature = "transaction control statements"},
-    {.word = "start", .feature = "transaction control statements"},
-    {.word = "commit", .feature = "transaction control statements"},
-    {.word = "end", .feature = "transaction control statements"},
-    {.word = "rollback", .feature = "transaction control statements"},
-    {.word = "abort", .feature = "transaction control statements"},
-    {.word = "savepoint", .feature = "transaction control statements"},
-    {.word = "release", .feature = "transaction control statements"},
-}};
+constexpr std::array<UnsupportedWord, 8> unsupported_statement_words{
+    {
+        {.word = "begin", .feature = "transaction control statements"},
+        {.word = "start", .feature = "transaction control statements"},
+        {.word = "commit", .feature = "transaction control statements"},
+        {.word = "end", .feature = "transaction control statements"},
+        {.word = "rollback", .feature = "transaction control statements"},
+        {.word = "abort", .feature = "transaction control statements"},
+        {.word = "savepoint", .feature = "transaction control statements"},
+        {.word = "release", .feature = "transaction control statements"},
+    },
+};
 
 /// \brief Words that start clauses outside the supported SELECT subset.
-constexpr std::array<UnsupportedWord, 16> unsupported_clause_words{{
-    {.word = "join", .feature = "JOIN"},
-    {.word = "inner", .feature = "JOIN"},
-    {.word = "left", .feature = "JOIN"},
-    {.word = "right", .feature = "JOIN"},
-    {.word = "full", .feature = "JOIN"},
-    {.word = "cross", .feature = "JOIN"},
-    {.word = "natural", .feature = "JOIN"},
-    {.word = "order", .feature = "ORDER BY"},
-    {.word = "group", .feature = "GROUP BY"},
-    {.word = "having", .feature = "HAVING"},
-    {.word = "limit", .feature = "LIMIT"},
-    {.word = "offset", .feature = "OFFSET"},
-    {.word = "fetch", .feature = "FETCH"},
-    {.word = "union", .feature = "UNION"},
-    {.word = "intersect", .feature = "INTERSECT"},
-    {.word = "except", .feature = "EXCEPT"},
-}};
+constexpr std::array<UnsupportedWord, 16> unsupported_clause_words{
+    {
+        {.word = "join", .feature = "JOIN"},
+        {.word = "inner", .feature = "JOIN"},
+        {.word = "left", .feature = "JOIN"},
+        {.word = "right", .feature = "JOIN"},
+        {.word = "full", .feature = "JOIN"},
+        {.word = "cross", .feature = "JOIN"},
+        {.word = "natural", .feature = "JOIN"},
+        {.word = "order", .feature = "ORDER BY"},
+        {.word = "group", .feature = "GROUP BY"},
+        {.word = "having", .feature = "HAVING"},
+        {.word = "limit", .feature = "LIMIT"},
+        {.word = "offset", .feature = "OFFSET"},
+        {.word = "fetch", .feature = "FETCH"},
+        {.word = "union", .feature = "UNION"},
+        {.word = "intersect", .feature = "INTERSECT"},
+        {.word = "except", .feature = "EXCEPT"},
+    },
+};
 
 /// \brief Words that start predicates outside the supported subset.
-constexpr std::array<UnsupportedWord, 5> unsupported_predicate_words{{
-    {.word = "in", .feature = "IN"},
-    {.word = "like", .feature = "LIKE"},
-    {.word = "ilike", .feature = "ILIKE"},
-    {.word = "between", .feature = "BETWEEN"},
-    {.word = "similar", .feature = "SIMILAR TO"},
-}};
+constexpr std::array<UnsupportedWord, 5> unsupported_predicate_words{
+    {
+        {.word = "in", .feature = "IN"},
+        {.word = "like", .feature = "LIKE"},
+        {.word = "ilike", .feature = "ILIKE"},
+        {.word = "between", .feature = "BETWEEN"},
+        {.word = "similar", .feature = "SIMILAR TO"},
+    },
+};
 
 template <std::size_t Size>
 [[nodiscard]] auto find_unsupported(const std::array<UnsupportedWord, Size>& table,
@@ -131,9 +137,13 @@ class Parser {
   }
 
   [[nodiscard]] static auto syntax_error(const Token& token) -> SqlError {
-    std::string message = token.kind == TokenKind::end_of_input
-                              ? std::string{"syntax error at end of input"}
-                              : std::format("syntax error at or near \"{}\"", token.text);
+    std::string message = "syntax error";
+    if (token.position.line != 0) {
+      message += std::format(" at line {}, column {}", token.position.line, token.position.column);
+    }
+    message += token.kind == TokenKind::end_of_input
+                   ? " at end of input"
+                   : std::format(" at or near \"{}\"", token.text);
     return SqlError{
         .sqlstate = std::string{sqlstate::syntax_error},
         .message = std::move(message),
@@ -366,9 +376,11 @@ auto Parser::parse_insert() -> SqlResult<InsertStmt> {
     return std::unexpected{syntax_error(current())};
   }
   advance();
-  return InsertStmt{.table = std::move(table.value()),
-                    .columns = std::move(columns),
-                    .values = std::move(literals.value())};
+  return InsertStmt{
+      .table = std::move(table.value()),
+      .columns = std::move(columns),
+      .values = std::move(literals.value()),
+  };
 }
 
 auto Parser::parse_assignments() -> SqlResult<std::vector<Assignment>> {
@@ -417,9 +429,11 @@ auto Parser::parse_update() -> SqlResult<UpdateStmt> {
     }
     where = std::move(expression.value());
   }
-  return UpdateStmt{.table = std::move(table.value()),
-                    .assignments = std::move(assignments.value()),
-                    .where = std::move(where)};
+  return UpdateStmt{
+      .table = std::move(table.value()),
+      .assignments = std::move(assignments.value()),
+      .where = std::move(where),
+  };
 }
 
 auto Parser::parse_delete() -> SqlResult<DeleteStmt> {
@@ -448,12 +462,18 @@ auto Parser::parse_type_name() -> SqlResult<TypeName> {
   if (at_keyword(Keyword::bigint) || at_keyword(Keyword::int8)) {
     advance();
     return TypeName{
-        .kind = TypeNameKind::bigint, .decimal = std::nullopt, .position = token.position};
+        .kind = TypeNameKind::bigint,
+        .decimal = std::nullopt,
+        .position = token.position,
+    };
   }
   if (at_keyword(Keyword::varchar) || at_keyword(Keyword::text)) {
     advance();
     return TypeName{
-        .kind = TypeNameKind::varchar, .decimal = std::nullopt, .position = token.position};
+        .kind = TypeNameKind::varchar,
+        .decimal = std::nullopt,
+        .position = token.position,
+    };
   }
   if (!at_keyword(Keyword::decimal) && !at_keyword(Keyword::numeric)) {
     return std::unexpected{syntax_error(token)};

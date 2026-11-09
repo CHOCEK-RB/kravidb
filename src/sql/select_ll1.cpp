@@ -22,6 +22,87 @@ auto terminal(const Token& token) -> T {
            .keyword = token.kind == TokenKind::keyword ? token.keyword : Keyword::none};
 }
 
+/// \brief Renders a terminal for a diagnostic's expected-token list.
+auto terminal_name(const T& term) -> std::string_view {
+  switch (term.kind) {
+    case TokenKind::identifier:
+      return "identifier";
+    case TokenKind::integer_literal:
+      return "integer";
+    case TokenKind::decimal_literal:
+      return "decimal";
+    case TokenKind::string_literal:
+      return "string";
+    case TokenKind::comma:
+      return ",";
+    case TokenKind::left_paren:
+      return "(";
+    case TokenKind::right_paren:
+      return ")";
+    case TokenKind::star:
+      return "*";
+    case TokenKind::semicolon:
+      return ";";
+    case TokenKind::equal:
+      return "=";
+    case TokenKind::not_equal:
+      return "<>";
+    case TokenKind::less:
+      return "<";
+    case TokenKind::less_equal:
+      return "<=";
+    case TokenKind::greater:
+      return ">";
+    case TokenKind::greater_equal:
+      return ">=";
+    case TokenKind::end_of_input:
+      return "end of input";
+    case TokenKind::keyword:
+      switch (term.keyword) {
+        case Keyword::select:
+          return "SELECT";
+        case Keyword::from:
+          return "FROM";
+        case Keyword::where:
+          return "WHERE";
+        case Keyword::or_:
+          return "OR";
+        case Keyword::and_:
+          return "AND";
+        case Keyword::is:
+          return "IS";
+        case Keyword::not_:
+          return "NOT";
+        case Keyword::null:
+          return "NULL";
+        default:
+          return "keyword";
+      }
+  }
+  return "token";
+}
+
+/// \brief Lists the table columns that can follow a variable, sorted and unique.
+auto expected_terminals(const ll1::ParseTable& table, N variable) -> std::string {
+  std::vector<std::string> names;
+  for (const auto& entry : table) {
+    if (entry.first.first == variable) {
+      names.emplace_back(terminal_name(entry.first.second));
+    }
+  }
+  std::ranges::sort(names);
+  const auto [first, last] = std::ranges::unique(names);
+  names.erase(first, last);
+  std::string result;
+  for (const auto& name : names) {
+    if (!result.empty()) {
+      result += ", ";
+    }
+    result += name;
+  }
+  return result;
+}
+
 /// \brief std::span has no at() in C++23; keep checked access at one boundary.
 template <class Value>
 auto checked_at(std::span<const Value> values, std::size_t offset) -> const Value& {
@@ -61,12 +142,19 @@ auto first_of(std::span<const ll1::Symbol> symbols, const std::array<Set, nonter
   return result;
 }
 
-auto syntax_error(const Token& token) -> SqlError {
+auto syntax_error(const Token& token, std::string_view expected = {}) -> SqlError {
+  std::string message = "syntax error";
+  if (token.position.line != 0) {
+    message += std::format(" at line {}, column {}", token.position.line, token.position.column);
+  }
+  message += token.kind == TokenKind::end_of_input ? " at end of input"
+                                                   : std::format(" at or near \"{}\"", token.text);
+  if (!expected.empty()) {
+    message += std::format("; expected: {}", expected);
+  }
   return SqlError{
       .sqlstate = std::string{sqlstate::syntax_error},
-      .message = token.kind == TokenKind::end_of_input
-                     ? "syntax error at end of input"
-                     : std::format("syntax error at or near \"{}\"", token.text),
+      .message = std::move(message),
       .position = token.position,
   };
 }
@@ -291,13 +379,15 @@ auto validate_select(std::span<const Token> tokens, const ll1::TraceCallback& tr
   std::size_t cursor = 0;
   std::size_t depth = 0;
   std::vector<ll1::Symbol> stack{N::statement};
-  const auto emit = [&](ll1::TraceAction action,
-                        std::optional<std::size_t> production = {}) -> void {
+  const auto emit = [&](ll1::TraceAction action, std::optional<std::size_t> production = {},
+                        std::optional<ll1::Cell> cell = {}) -> void {
     if (trace) {
       trace(ll1::TraceStep{.action = action,
                            .token_index = cursor,
                            .stack_size = stack.size(),
-                           .production = production});
+                           .production = production,
+                           .stack = stack,
+                           .cell = std::move(cell)});
     }
   };
   const auto fail = [&](SqlError error) -> SqlResult<void> {
@@ -329,7 +419,7 @@ auto validate_select(std::span<const Token> tokens, const ll1::TraceCallback& tr
     }
     if (const auto* expected = std::get_if<T>(&symbol)) {
       if (*expected != terminal(token)) {
-        return fail(syntax_error(token));
+        return fail(syntax_error(token, terminal_name(*expected)));
       }
       emit(ll1::TraceAction::match);
       stack.pop_back();
@@ -352,9 +442,9 @@ auto validate_select(std::span<const Token> tokens, const ll1::TraceCallback& tr
           return fail(unsupported(*feature, token));
         }
       }
-      return fail(syntax_error(token));
+      return fail(syntax_error(token, expected_terminals(*table, variable)));
     }
-    emit(ll1::TraceAction::expand, entry->second);
+    emit(ll1::TraceAction::expand, entry->second, ll1::Cell{variable, terminal(token)});
     stack.pop_back();
     const auto& right = checked_at(grammar, entry->second).right;
     stack.insert(stack.end(), right.rbegin(), right.rend());
