@@ -66,9 +66,9 @@ enum class TraceAction : std::uint8_t { expand, match, accept, error };
 
 /// \brief Snapshot before an action. Production is present only for expansion.
 struct TraceStep {
-  TraceAction action;
-  std::size_t token_index;
-  std::size_t stack_size;
+  TraceAction action{};
+  std::size_t token_index{0};
+  std::size_t stack_size{0};
   std::optional<std::size_t> production;
 };
 
