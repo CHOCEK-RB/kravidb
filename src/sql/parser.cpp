@@ -4,6 +4,7 @@ import std;
 import sql.ast;
 import sql.error;
 import sql.lexer;
+import sql.select_ll1;
 
 namespace kravidb::sql {
 namespace {
@@ -97,7 +98,9 @@ template <std::size_t Size>
 
 class Parser {
   public:
-  explicit Parser(std::span<const Token> tokens) : tokens_{tokens} {}
+  enum class Mode : std::uint8_t { production, recursive_reference };
+  explicit Parser(std::span<const Token> tokens, Mode mode = Mode::production)
+      : tokens_{tokens}, mode_{mode} {}
 
   [[nodiscard]] auto run() -> SqlResult<Stmt>;
 
@@ -170,6 +173,7 @@ class Parser {
   [[nodiscard]] auto parse_target_list() -> SqlResult<std::vector<Identifier>>;
   [[nodiscard]] auto parse_target() -> SqlResult<Identifier>;
   [[nodiscard]] auto parse_expr() -> SqlResult<std::unique_ptr<Expr>>;
+  [[nodiscard]] auto parse_expr_iterative() -> SqlResult<std::unique_ptr<Expr>>;
   [[nodiscard]] auto parse_and_expr() -> SqlResult<std::unique_ptr<Expr>>;
   [[nodiscard]] auto parse_predicate() -> SqlResult<std::unique_ptr<Expr>>;
   [[nodiscard]] auto parse_primary() -> SqlResult<std::unique_ptr<Expr>>;
@@ -179,6 +183,7 @@ class Parser {
   [[nodiscard]] auto trailing_clause_error() const -> SqlError;
 
   std::span<const Token> tokens_;
+  Mode mode_;
   std::size_t index_{0};
   std::size_t depth_{0};
 };
@@ -246,6 +251,11 @@ auto Parser::parse_statement() -> SqlResult<Stmt> {
   if (first.kind == TokenKind::keyword) {
     switch (first.keyword) {
       case Keyword::select: {
+        if (mode_ == Mode::production) {
+          if (auto validation = validate_select(tokens_); !validation.has_value()) {
+            return std::unexpected{std::move(validation.error())};
+          }
+        }
         auto select = parse_select();
         if (!select.has_value()) {
           return std::unexpected{std::move(select.error())};
@@ -682,7 +692,7 @@ auto Parser::parse_select() -> SqlResult<SelectStmt> {
 
   if (at_keyword(Keyword::where)) {
     advance();
-    auto where = parse_expr();
+    auto where = mode_ == Mode::recursive_reference ? parse_expr() : parse_expr_iterative();
     if (!where.has_value()) {
       return std::unexpected{std::move(where.error())};
     }
@@ -690,6 +700,106 @@ auto Parser::parse_select() -> SqlResult<SelectStmt> {
   }
 
   return statement;
+}
+
+auto Parser::parse_expr_iterative() -> SqlResult<std::unique_ptr<Expr>> {
+  // Continuations mirror expr/and_expr/predicate/primary without using the
+  // C++ call stack. combine executes after its right operand and folds left.
+  enum class Action : std::uint8_t {
+    expr,
+    or_tail,
+    and_expr,
+    and_tail,
+    predicate,
+    predicate_tail,
+    primary,
+    close_paren,
+    combine,
+  };
+  struct Task {
+    Action action;
+    BinaryOp operation{BinaryOp::eq};
+    SourcePosition position{};
+  };
+  std::vector<Task> tasks{{Action::expr}};
+  std::vector<std::unique_ptr<Expr>> values;
+  while (!tasks.empty()) {
+    const Task task = tasks.back();
+    tasks.pop_back();
+    switch (task.action) {
+      case Action::expr:
+        tasks.push_back({Action::or_tail});
+        tasks.push_back({Action::and_expr});
+        break;
+      case Action::and_expr:
+        tasks.push_back({Action::and_tail});
+        tasks.push_back({Action::predicate});
+        break;
+      case Action::predicate:
+        tasks.push_back({Action::predicate_tail});
+        tasks.push_back({Action::primary});
+        break;
+      case Action::or_tail:
+      case Action::and_tail: {
+        const bool conjunction = task.action == Action::and_tail;
+        if (at_keyword(conjunction ? Keyword::and_ : Keyword::or_)) {
+          const auto position = advance().position;
+          tasks.push_back(task);
+          tasks.push_back(
+              {Action::combine, conjunction ? BinaryOp::and_ : BinaryOp::or_, position});
+          tasks.push_back({conjunction ? Action::predicate : Action::and_expr});
+        }
+        break;
+      }
+      case Action::predicate_tail:
+        if (const auto operation = comparison_operator(current().kind)) {
+          const auto position = advance().position;
+          tasks.push_back({Action::combine, *operation, position});
+          tasks.push_back({Action::primary});
+        } else if (at_keyword(Keyword::is)) {
+          const auto position = advance().position;
+          BinaryOp operation = BinaryOp::is_null;
+          if (at_keyword(Keyword::not_)) {
+            advance();
+            operation = BinaryOp::is_not_null;
+          }
+          advance();  // NULL: the LL(1) validator already checked the token.
+          values.back() = make_binary(operation, position, std::move(values.back()), nullptr);
+        }
+        break;
+      case Action::primary:
+        if (at(TokenKind::left_paren)) {
+          advance();
+          tasks.push_back({Action::close_paren});
+          tasks.push_back({Action::expr});
+        } else if (at(TokenKind::identifier)) {
+          auto name = expect_identifier();
+          if (!name.has_value()) {
+            return std::unexpected{std::move(name.error())};
+          }
+          values.push_back(
+              std::make_unique<Expr>(Expr{.node = ColumnRef{.name = std::move(name.value())}}));
+        } else {
+          auto literal = parse_literal();
+          if (!literal.has_value()) {
+            return std::unexpected{std::move(literal.error())};
+          }
+          values.push_back(std::make_unique<Expr>(Expr{.node = std::move(literal.value())}));
+        }
+        break;
+      case Action::close_paren:
+        advance();
+        break;
+      case Action::combine: {
+        auto right = std::move(values.back());
+        values.pop_back();
+        values.back() =
+            make_binary(task.operation, task.position, std::move(values.back()), std::move(right));
+        break;
+      }
+    }
+  }
+  return std::move(values.back());
 }
 
 auto Parser::parse_target_list() -> SqlResult<std::vector<Identifier>> {
@@ -918,6 +1028,10 @@ namespace kravidb::sql {
 
 auto parse_tokens(std::span<const Token> tokens) -> SqlResult<Stmt> {
   return Parser{tokens}.run();
+}
+
+auto detail::parse_tokens_recursive_reference(std::span<const Token> tokens) -> SqlResult<Stmt> {
+  return Parser{tokens, Parser::Mode::recursive_reference}.run();
 }
 
 auto parse(std::string_view text) -> SqlResult<Stmt> {

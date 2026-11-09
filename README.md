@@ -220,6 +220,62 @@ xmake test
 
 <br>
 
+## Validación sintáctica de SELECT
+
+El recorrido de una consulta es `texto → lexer → tokens → validador LL(1) → AST →
+análisis semántico`. Solo las sentencias que empiezan con `SELECT` pasan por el
+validador; `INSERT`, `UPDATE`, `DELETE`, `CREATE`, `DROP` y `ALTER` conservan el
+parser anterior.
+
+`kravidb::sql::validate_select(tokens)` comprueba exactamente un `SELECT`, con `;`
+opcional y un token final `end_of_input`, sin construir el AST ni consultar el
+catálogo. Por eso puede aceptar sintácticamente `WHERE 123`: el analyzer rechaza
+después ese filtro por no ser booleano.
+
+La gramática está representada como datos en `src/sql/select_ll1.cpp`:
+
+```text
+statement      → SELECT targets FROM table where_opt semicolon_opt EOF
+targets        → * | target targets_tail
+target         → identifier
+targets_tail   → , target targets_tail | ε
+table          → identifier
+where_opt      → WHERE expr | ε
+expr           → and_expr or_tail
+or_tail        → OR and_expr or_tail | ε
+and_expr       → predicate and_tail
+and_tail       → AND predicate and_tail | ε
+predicate      → primary predicate_tail
+predicate_tail → comparison primary | IS not_opt NULL | ε
+not_opt        → NOT | ε
+primary        → ( expr ) | identifier | literal
+literal        → integer | decimal | string | NULL
+comparison     → = | <> | < | <= | > | >=
+semicolon_opt  → ; | ε
+```
+
+`!=` y `<>` comparten token. La tabla `M[no terminal, siguiente terminal]` se
+construye con FIRST/FOLLOW y detección de conflictos. Los terminales distinguen
+`TokenKind` y `Keyword`, porque todas las palabras reservadas comparten categoría.
+El motor usa una pila explícita y ofrece un callback opcional de traza:
+
+```cpp
+auto result = kravidb::sql::validate_select(tokens, [](const auto& step) {
+  // step.action: expand, match, accept o error.
+  // step.token_index, step.stack_size y step.production permiten seguir el análisis.
+});
+```
+
+Tras validar, el AST de `SELECT` también se construye con una pila de tareas, sin
+descenso recursivo. Se mantienen la precedencia de `AND` sobre `OR`, la
+asociatividad izquierda y el límite de 256 paréntesis anidados. Los errores
+conservan SQLSTATE y posición; no se añaden cláusulas SQL al alcance soportado.
+El parser recursivo de referencia se conserva en `sql::detail` exclusivamente
+como oráculo de las pruebas diferenciales, no como entrada de producción.
+
+Las pruebas en `tests/test_sql_select_ll1.cpp` verifican tabla, conflictos,
+trazas, corpus, mutaciones de tokens y concordancia del AST con ese oráculo.
+
 ## 🌳 Árbol B y Grado $t$
 
 El índice implementa un Árbol B conforme a la especificación clásica de Cormen, Leiserson, Rivest y Stein (**CLRS**), parametrizado por su grado mínimo $t \ge 2$:
