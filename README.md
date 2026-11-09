@@ -144,14 +144,6 @@ xmake run kravidb_lexer --file consulta.sql
 printf "SELECT 1;" | xmake run kravidb_lexer
 ```
 
-En modo interactivo se edita la sentencia en el panel `SQL` (borde cian); la esquina
-superior derecha muestra `cursor línea:columna`, que se actualiza con las flechas. Los
-tokens, la tabla y los posibles errores se actualizan en vivo. El panel `SQL` crece hasta
-unas pocas líneas y después se desplaza con su propia barra; la tabla de tokens también
-tiene barra y se recorre con `PgUp`/`PgDn`, sin desplazar la sentencia. `Ctrl+L` limpia la
-sentencia y deja el cursor al inicio; `Esc` o `Ctrl+C` cierran la TUI. En modo archivo o
-tubería el documento se imprime una vez y el proceso termina.
-
 ### Reglas léxicas
 
 | Aspecto | Regla |
@@ -197,21 +189,6 @@ un error no devuelve un vector parcial de tokens. La salida muestra `SQLSTATE`, 
 línea, columna y un `^` bajo el carácter problemático. En modo estático un error léxico
 termina con código `1`; los errores de uso o de archivo terminan con `2`.
 
-### Colores
-
-| Color | Categoría |
-|:---|:---|
-| Cian | Palabra reservada |
-| Azul | Identificador |
-| Amarillo | Entero |
-| Magenta | Decimal |
-| Verde | Cadena |
-| Rojo | Operador |
-| Gris | Puntuación |
-| Gris claro | `EOF` |
-
-La paleta usa truecolor con tonos claros, pensada para terminales de fondo oscuro.
-
 Las pruebas del analizador (26 casos de lexer dentro de la suite SQL) se ejecutan con:
 
 ```bash
@@ -228,9 +205,7 @@ validador; `INSERT`, `UPDATE`, `DELETE`, `CREATE`, `DROP` y `ALTER` conservan el
 parser anterior.
 
 `kravidb::sql::validate_select(tokens)` comprueba exactamente un `SELECT`, con `;`
-opcional y un token final `end_of_input`, sin construir el AST ni consultar el
-catálogo. Por eso puede aceptar sintácticamente `WHERE 123`: el analyzer rechaza
-después ese filtro por no ser booleano.
+opcional y un token final `end_of_input`.
 
 La gramática está representada como datos en `src/sql/select_ll1.cpp`:
 
@@ -265,16 +240,6 @@ auto result = kravidb::sql::validate_select(tokens, [](const auto& step) {
   // step.token_index, step.stack_size y step.production permiten seguir el análisis.
 });
 ```
-
-Tras validar, el AST de `SELECT` también se construye con una pila de tareas, sin
-descenso recursivo. Se mantienen la precedencia de `AND` sobre `OR`, la
-asociatividad izquierda y el límite de 256 paréntesis anidados. Los errores
-conservan SQLSTATE y posición; no se añaden cláusulas SQL al alcance soportado.
-El parser recursivo de referencia se conserva en `sql::detail` exclusivamente
-como oráculo de las pruebas diferenciales, no como entrada de producción.
-
-Las pruebas en `tests/test_sql_select_ll1.cpp` verifican tabla, conflictos,
-trazas, corpus, mutaciones de tokens y concordancia del AST con ese oráculo.
 
 ## 🌳 Árbol B y Grado $t$
 
@@ -357,7 +322,10 @@ kravidb/
 ├── apps/
 │   ├── cli/main.cpp          # Punto de entrada de la CLI
 │   ├── api/main.cpp          # Punto de entrada del servidor HTTP
-│   └── sql_lexer/main.cpp    # Visor de tokens SQL con FTXUI
+│   ├── sql_lexer/main.cpp    # Visor de tokens SQL con FTXUI
+│   └── sql_parser/main.cpp   # Visor de la traza LL(1) con FTXUI
+├── parser_ll1/               # Documentación del parser LL(1)
+│   └── GRAMMAR.md            # Gramática, FIRST/FOLLOW y tabla M[A,a]
 ├── benchmarks/               # Arnés de rendimiento Google Benchmark
 │   └── benchmark.cpp         # Comparativa Index Scan vs Full Table Scan
 ├── docs/
