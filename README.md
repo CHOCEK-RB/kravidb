@@ -176,10 +176,15 @@ printf "SELECT 1;" | xmake run kravidb_lexer
 `SEMICOLON` y `EOF` se agrega después, incluso si la sentencia no termina en `;`. La tabla
 muestra ambas filas y el flujo resumido termina con `<EOF>`.
 
-Palabras reservadas: `add`, `alter`, `and`, `bigint`, `column`, `create`, `decimal`,
-`delete`, `drop`, `exists`, `from`, `if`, `index`, `insert`, `int8`, `into`, `is`, `key`,
+Palabras reservadas: `add`, `alter`, `and`, `bigint`, `boolean`, `column`, `create`, `decimal`,
+`delete`, `drop`, `exists`, `false`, `float`, `from`, `if`, `index`, `insert`, `int`, `int8`,
+`integer`, `into`, `is`, `key`,
 `not`, `null`, `numeric`, `or`, `primary`, `select`, `set`, `table`, `text`, `unique`,
-`update`, `values`, `varchar`, `where`.
+`true`, `update`, `values`, `varchar`, `where`.
+
+`INT` e `INTEGER` son alias de `BIGINT`. `FLOAT` es un tipo declarable;
+`BOOLEAN` se reserva para tipos del catálogo y expresiones, no para declaraciones
+de columnas SQL. `TRUE` y `FALSE` son literales booleanos.
 
 ### Posiciones y errores
 
@@ -224,7 +229,7 @@ predicate      → primary predicate_tail
 predicate_tail → comparison primary | IS not_opt NULL | ε
 not_opt        → NOT | ε
 primary        → ( expr ) | identifier | literal
-literal        → integer | decimal | string | NULL
+literal        → integer | decimal | string | NULL | TRUE | FALSE
 comparison     → = | <> | < | <= | > | >=
 semicolon_opt  → ; | ε
 ```

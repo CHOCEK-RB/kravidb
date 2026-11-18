@@ -8,7 +8,7 @@ namespace {
 
 constexpr std::size_t max_identifier_bytes = 63;
 
-constexpr std::array<std::pair<std::string_view, Keyword>, 32> keyword_table{
+constexpr std::array<std::pair<std::string_view, Keyword>, 38> keyword_table{
     {
         {"add", Keyword::add},         {"alter", Keyword::alter},     {"and", Keyword::and_},
         {"bigint", Keyword::bigint},   {"column", Keyword::column},   {"create", Keyword::create},
@@ -20,7 +20,9 @@ constexpr std::array<std::pair<std::string_view, Keyword>, 32> keyword_table{
         {"or", Keyword::or_},          {"primary", Keyword::primary}, {"select", Keyword::select},
         {"set", Keyword::set},         {"table", Keyword::table},     {"text", Keyword::text},
         {"unique", Keyword::unique},   {"update", Keyword::update},   {"values", Keyword::values},
-        {"varchar", Keyword::varchar}, {"where", Keyword::where},
+        {"varchar", Keyword::varchar}, {"where", Keyword::where},     {"boolean", Keyword::boolean},
+        {"float", Keyword::float_},    {"true", Keyword::true_},      {"false", Keyword::false_},
+        {"int", Keyword::int_},        {"integer", Keyword::integer},
     },
 };
 

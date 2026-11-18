@@ -23,7 +23,7 @@ struct DecimalLiteral {
 struct NullLiteral {};
 
 /// \brief Value of a literal before type analysis.
-using LiteralValue = std::variant<std::int64_t, DecimalLiteral, std::string, NullLiteral>;
+using LiteralValue = std::variant<std::int64_t, DecimalLiteral, std::string, NullLiteral, bool>;
 
 /// \brief One literal and its source position.
 struct Literal {
@@ -78,7 +78,8 @@ struct DecimalType {
 };
 
 /// \brief Supported SQL type names.
-enum class TypeNameKind : std::uint8_t { bigint, varchar, decimal };
+/// `BOOLEAN` is reserved for expression/catalog types, not column declarations.
+enum class TypeNameKind : std::uint8_t { bigint, varchar, decimal, float8 };
 
 /// \brief SQL type name before conversion to a storage field type.
 struct TypeName {

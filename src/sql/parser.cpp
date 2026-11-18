@@ -459,13 +459,19 @@ auto Parser::parse_delete() -> SqlResult<DeleteStmt> {
 
 auto Parser::parse_type_name() -> SqlResult<TypeName> {
   const Token& token = current();
-  if (at_keyword(Keyword::bigint) || at_keyword(Keyword::int8)) {
+  if (at_keyword(Keyword::bigint) || at_keyword(Keyword::int8) || at_keyword(Keyword::int_) ||
+      at_keyword(Keyword::integer)) {
     advance();
     return TypeName{
         .kind = TypeNameKind::bigint,
         .decimal = std::nullopt,
         .position = token.position,
     };
+  }
+  if (at_keyword(Keyword::float_)) {
+    advance();
+    return TypeName{
+        .kind = TypeNameKind::float8, .decimal = std::nullopt, .position = token.position};
   }
   if (at_keyword(Keyword::varchar) || at_keyword(Keyword::text)) {
     advance();
@@ -868,7 +874,8 @@ auto Parser::parse_target() -> SqlResult<Identifier> {
     case TokenKind::string_literal:
       return std::unexpected{unsupported("expressions in the select list", token)};
     case TokenKind::keyword:
-      if (token.keyword == Keyword::null) {
+      if (token.keyword == Keyword::null || token.keyword == Keyword::true_ ||
+          token.keyword == Keyword::false_) {
         return std::unexpected{unsupported("expressions in the select list", token)};
       }
       return std::unexpected{syntax_error(token)};
@@ -1031,6 +1038,10 @@ auto Parser::parse_literal() -> SqlResult<Literal> {
       advance();
       return Literal{.value = token.text, .position = token.position};
     case TokenKind::keyword:
+      if (token.keyword == Keyword::true_ || token.keyword == Keyword::false_) {
+        advance();
+        return Literal{.value = token.keyword == Keyword::true_, .position = token.position};
+      }
       if (token.keyword == Keyword::null) {
         advance();
         return Literal{.value = NullLiteral{}, .position = token.position};

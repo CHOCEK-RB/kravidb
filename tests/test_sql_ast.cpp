@@ -11,7 +11,7 @@ using namespace sql;
 
 constexpr std::size_t stmt_alternative_count = 10;
 constexpr std::size_t expr_alternative_count = 3;
-constexpr std::size_t literal_alternative_count = 4;
+constexpr std::size_t literal_alternative_count = 5;
 constexpr std::size_t first_byte = 1;
 constexpr std::size_t second_byte = 2;
 constexpr std::size_t third_byte = 3;
