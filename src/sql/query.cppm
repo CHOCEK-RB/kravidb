@@ -20,7 +20,8 @@ enum class TypeKind : std::uint8_t {
   bigint,
   varchar,
   decimal,
-  /// \brief Result of a comparison, `AND`, `OR` or `IS [NOT] NULL`.
+  float8,
+  /// \brief Catalog boolean, literal or result of a comparison/logical expression.
   boolean,
   /// \brief Type of the bare `NULL` literal; compatible with every type.
   null,
@@ -48,7 +49,7 @@ struct ColumnVar {
 };
 
 /// \brief Value of a constant after analysis.
-using ConstValue = std::variant<std::monostate, std::int64_t, storage::Decimal, std::string>;
+using ConstValue = std::variant<std::monostate, std::int64_t, storage::Decimal, std::string, bool>;
 
 /// \brief Constant expression; `std::monostate` stands for `NULL`.
 struct Const {
@@ -96,6 +97,8 @@ struct Query {
   switch (type.kind) {
     case TypeKind::bigint:
       return "bigint";
+    case TypeKind::float8:
+      return "float";
     case TypeKind::varchar:
       return "varchar";
     case TypeKind::decimal:

@@ -246,6 +246,25 @@ auto result = kravidb::sql::validate_select(tokens, [](const auto& step) {
 });
 ```
 
+### Tipos en el análisis semántico
+
+El analyzer resuelve los OIDs `int8`, `varchar`, `numeric`, `float8` y `bool`
+del catálogo a los tipos SQL `bigint`, `varchar`, `decimal`, `float` y `boolean`.
+Las comparaciones numéricas admiten promoción implícita
+`BIGINT → DECIMAL → FLOAT`; el árbol tipado conserva el tipo original de cada
+operando. `BOOLEAN` solo es comparable con `BOOLEAN`, salvo `NULL`, que es
+compatible con cualquier tipo. `WHERE`, `AND` y `OR` requieren booleanos o `NULL`.
+
+Por ejemplo, `weight > 3`, `weight > 3.5` y `active = TRUE` son válidos si
+`weight` es FLOAT y `active` es BOOLEAN. `name > 3` (con `name` VARCHAR) y
+`active AND weight` fallan con SQLSTATE `42804`.
+
+Este soporte se limita a metadatos y análisis: los valores FLOAT/BOOLEAN todavía
+no tienen encoding de filas ni soporte de executor/API. `RelCache` puede
+representar sus esquemas, pero estos no validan tuplas físicas de esos tipos.
+Los catálogos nuevos incluyen ambos tipos en `kd_type`; abrir un catálogo antiguo
+sin esas entradas produce `XX001`, sin migrarlo ni reescribirlo automáticamente.
+
 ## 🌳 Árbol B y Grado $t$
 
 El índice implementa un Árbol B conforme a la especificación clásica de Cormen, Leiserson, Rivest y Stein (**CLRS**), parametrizado por su grado mínimo $t \ge 2$:

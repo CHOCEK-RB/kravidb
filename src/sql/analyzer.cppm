@@ -6,9 +6,13 @@
 /// It never touches the heap: a statement that fails here has read no rows.
 ///
 /// Type rules:
-/// - `BIGINT` and `DECIMAL` are comparable with each other.
+/// - `BIGINT`, `DECIMAL` and `FLOAT` are comparable through implicit numeric
+///   promotion (`BIGINT` -> `DECIMAL` -> `FLOAT`). Operand types are preserved;
+///   executing the conversion is outside the analyzer's scope.
 /// - `VARCHAR` is comparable only with `VARCHAR`.
 /// - `BOOLEAN` is comparable only with `BOOLEAN`.
+///   It can come from catalog columns, `TRUE`/`FALSE` or expressions, but is not
+///   a declarable SQL column type.
 /// - The `NULL` literal is comparable with every type.
 /// - `AND`, `OR` and `WHERE` need `BOOLEAN` operands (or `NULL`).
 /// - A numeric literal compared with a `DECIMAL(p,s)` column must have at most
