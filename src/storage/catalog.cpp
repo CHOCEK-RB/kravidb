@@ -265,6 +265,11 @@ class RowReader {
     rows.push_back({int_field(numeric_oid), text_field("numeric"),
                     int_field(kd_catalog_namespace_oid), int_field(-1), int_field(0),
                     text_field("b")});
+    rows.push_back({int_field(float8_oid), text_field("float8"),
+                    int_field(kd_catalog_namespace_oid), int_field(sizeof(double)), int_field(1),
+                    text_field("b")});
+    rows.push_back({int_field(bool_oid), text_field("bool"), int_field(kd_catalog_namespace_oid),
+                    int_field(1), int_field(1), text_field("b")});
   } else if (oid == kd_namespace_oid) {
     rows.push_back({int_field(kd_catalog_namespace_oid), text_field("kd_catalog")});
     rows.push_back({int_field(public_namespace_oid), text_field("public")});
@@ -448,6 +453,10 @@ auto write_relation(DirectoryPageSource& source, const RelationSpec& relation,
       return FieldType::Varchar;
     case numeric_oid:
       return FieldType::Decimal;
+    case float8_oid:
+      return FieldType::Float;
+    case bool_oid:
+      return FieldType::Boolean;
     default:
       throw SqlStateError{"42704", "unknown type OID " + std::to_string(type_oid)};
   }
@@ -583,7 +592,8 @@ class FileCatalog::Impl {
     }
 
     if (!type_oids.contains(int8_oid) || !type_oids.contains(varchar_oid) ||
-        !type_oids.contains(numeric_oid)) {
+        !type_oids.contains(numeric_oid) || !type_oids.contains(float8_oid) ||
+        !type_oids.contains(bool_oid)) {
       throw SqlStateError{
           "XX001", "kd_catalog '" + root_.string() + "': base types are missing from kd_type"};
     }

@@ -345,6 +345,56 @@ TEST_F(CatalogTest, RelCacheBuildsSchemaFromRelationDesc) {
   EXPECT_EQ(schema->column_at(1).type, FieldType::Varchar);
 }
 
+TEST_F(CatalogTest, BootstrapRegistersFloatAndBooleanTypes) {
+  FileCatalog catalog{path()};
+  catalog.bootstrap();
+  FileRelationFile file{path(), relation_node(kd_type_oid)};
+  std::array<std::byte, physical_page_size> buffer{};
+  file.read(Fork::main, 0, buffer);
+  const auto page = Page::from_bytes(buffer);
+  std::map<Oid, std::vector<std::optional<Field>>> types;
+  for (std::uint16_t slot = 0; slot < page.item_count(); ++slot) {
+    const auto item = page.item(slot);
+    const auto tuple = HeapTuple::from_bytes(
+        std::span<const std::byte>{buffer}.subspan(item.offset(), item.length()));
+    ASSERT_TRUE(tuple.has_value());
+    auto fields = tuple->fields();
+    const auto oid = static_cast<Oid>(std::get<std::int64_t>(*fields.at(0)));
+    types.emplace(oid, std::move(fields));
+  }
+  constexpr std::size_t base_type_count = 5;
+  ASSERT_EQ(types.size(), base_type_count);
+  const auto& float_type = types.at(kravidb::storage::float8_oid);
+  EXPECT_EQ(std::get<std::string>(*float_type.at(1)), "float8");
+  EXPECT_EQ(std::get<std::int64_t>(*float_type.at(3)), sizeof(double));
+  EXPECT_EQ(std::get<std::int64_t>(*float_type.at(4)), 1);
+  const auto& bool_type = types.at(kravidb::storage::bool_oid);
+  EXPECT_EQ(std::get<std::string>(*bool_type.at(1)), "bool");
+  EXPECT_EQ(std::get<std::int64_t>(*bool_type.at(3)), 1);
+  EXPECT_EQ(std::get<std::int64_t>(*bool_type.at(4)), 1);
+  FileCatalog reopened{path()};
+  EXPECT_NO_THROW(reopened.open());
+}
+
+TEST_F(CatalogTest, RelCacheMapsFloatAndBooleanWithoutEnablingRowEncoding) {
+  SchemaCatalog catalog;
+  Transaction transaction{.xid = 1};
+  const auto oid = catalog.create_table(
+      transaction, {.name = "measurements",
+                    .attributes = {{.name = "weight", .type_oid = kravidb::storage::float8_oid},
+                                   {.name = "active", .type_oid = kravidb::storage::bool_oid}}});
+  const RelCache cache{catalog};
+  EXPECT_EQ(cache.require_column(oid, "weight").type_oid, kravidb::storage::float8_oid);
+  EXPECT_EQ(cache.require_column(oid, "active").type_oid, kravidb::storage::bool_oid);
+  const auto schema = cache.schema_of(oid);
+  ASSERT_NE(schema, nullptr);
+  EXPECT_EQ(schema->column_at(0).type, FieldType::Float);
+  EXPECT_EQ(schema->column_at(1).type, FieldType::Boolean);
+  // Existing physical values must not silently validate as the new metadata types.
+  const kravidb::storage::Tuple tuple{{Field{std::int64_t{1}}, Field{std::int64_t{1}}}};
+  EXPECT_FALSE(schema->validate(tuple));
+}
+
 TEST_F(CatalogTest, RelCacheMarksPrimaryKey) {
   SchemaCatalog catalog;
   const TableDef definition{
