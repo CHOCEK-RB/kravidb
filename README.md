@@ -176,10 +176,15 @@ printf "SELECT 1;" | xmake run kravidb_lexer
 `SEMICOLON` y `EOF` se agrega después, incluso si la sentencia no termina en `;`. La tabla
 muestra ambas filas y el flujo resumido termina con `<EOF>`.
 
-Palabras reservadas: `add`, `alter`, `and`, `bigint`, `column`, `create`, `decimal`,
-`delete`, `drop`, `exists`, `from`, `if`, `index`, `insert`, `int8`, `into`, `is`, `key`,
+Palabras reservadas: `add`, `alter`, `and`, `bigint`, `boolean`, `column`, `create`, `decimal`,
+`delete`, `drop`, `exists`, `false`, `float`, `from`, `if`, `index`, `insert`, `int`, `int8`,
+`integer`, `into`, `is`, `key`,
 `not`, `null`, `numeric`, `or`, `primary`, `select`, `set`, `table`, `text`, `unique`,
-`update`, `values`, `varchar`, `where`.
+`true`, `update`, `values`, `varchar`, `where`.
+
+`INT` e `INTEGER` son alias de `BIGINT`. `FLOAT` es un tipo declarable;
+`BOOLEAN` se reserva para tipos del catálogo y expresiones, no para declaraciones
+de columnas SQL. `TRUE` y `FALSE` son literales booleanos.
 
 ### Posiciones y errores
 
@@ -224,7 +229,7 @@ predicate      → primary predicate_tail
 predicate_tail → comparison primary | IS not_opt NULL | ε
 not_opt        → NOT | ε
 primary        → ( expr ) | identifier | literal
-literal        → integer | decimal | string | NULL
+literal        → integer | decimal | string | NULL | TRUE | FALSE
 comparison     → = | <> | < | <= | > | >=
 semicolon_opt  → ; | ε
 ```
@@ -240,6 +245,35 @@ auto result = kravidb::sql::validate_select(tokens, [](const auto& step) {
   // step.token_index, step.stack_size y step.production permiten seguir el análisis.
 });
 ```
+
+### Tipos en el análisis semántico
+
+El analyzer resuelve los OIDs `int8`, `varchar`, `numeric`, `float8` y `bool`
+del catálogo a los tipos SQL `bigint`, `varchar`, `decimal`, `float` y `boolean`.
+Las comparaciones numéricas admiten promoción implícita
+`BIGINT → DECIMAL → FLOAT`; el árbol tipado conserva el tipo original de cada
+operando. `BOOLEAN` solo es comparable con `BOOLEAN`, salvo `NULL`, que es
+compatible con cualquier tipo. `WHERE`, `AND` y `OR` requieren booleanos o `NULL`.
+
+Por ejemplo, `weight > 3`, `weight > 3.5` y `active = TRUE` son válidos si
+`weight` es FLOAT y `active` es BOOLEAN. `name > 3` (con `name` VARCHAR) y
+`active AND weight` fallan con SQLSTATE `42804`.
+
+Este soporte se limita a metadatos y análisis: los valores FLOAT/BOOLEAN todavía
+no tienen encoding de filas ni soporte de executor/API. `RelCache` puede
+representar sus esquemas, pero estos no validan tuplas físicas de esos tipos.
+Los catálogos nuevos incluyen ambos tipos en `kd_type`; abrir un catálogo antiguo
+sin esas entradas produce `XX001`, sin migrarlo ni reescribirlo automáticamente.
+
+### Política de proyecciones repetidas
+
+La lista explícita de `SELECT` **rechaza**, no advierte, columnas repetidas.
+Después de resolver cada nombre se comprueba su `attnum`: `SELECT id, id FROM t`
+y `SELECT ID, id FROM t` fallan con SQLSTATE `42701` en la segunda aparición.
+`SELECT id, name FROM t` y `SELECT * FROM t` siguen siendo válidos. Los nombres
+se resuelven de izquierda a derecha antes de detectar duplicados, por lo que
+`SELECT nope, nope FROM t` devuelve `42703` si `nope` no existe.
+El parser ya rechaza mezclar `*` con columnas explícitas.
 
 ## 🌳 Árbol B y Grado $t$
 

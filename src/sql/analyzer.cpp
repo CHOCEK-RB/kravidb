@@ -30,7 +30,8 @@ constexpr std::int32_t unconstrained_typmod = -1;
 }
 
 [[nodiscard]] auto is_numeric(const SqlType& type) noexcept -> bool {
-  return type.kind == TypeKind::bigint || type.kind == TypeKind::decimal;
+  return type.kind == TypeKind::bigint || type.kind == TypeKind::decimal ||
+         type.kind == TypeKind::float8;
 }
 
 [[nodiscard]] auto is_comparable(const SqlType& left, const SqlType& right) noexcept -> bool {
@@ -38,6 +39,8 @@ constexpr std::int32_t unconstrained_typmod = -1;
     return true;
   }
   if (is_numeric(left) && is_numeric(right)) {
+    // Implicit numeric promotion: BIGINT -> DECIMAL -> FLOAT. Keep each
+    // operand's declared type; this analysis-only stage does not execute casts.
     return true;
   }
   return left.kind == right.kind;
@@ -162,6 +165,10 @@ constexpr std::int32_t unconstrained_typmod = -1;
       return simple_type(TypeKind::bigint);
     case storage::varchar_oid:
       return simple_type(TypeKind::varchar);
+    case storage::float8_oid:
+      return simple_type(TypeKind::float8);
+    case storage::bool_oid:
+      return boolean_type();
     case storage::numeric_oid:
       break;
     default:
@@ -290,6 +297,8 @@ class Analyzer {
           if constexpr (std::is_same_v<Value, std::int64_t>) {
             return make_typed(Const{.value = value}, simple_type(TypeKind::bigint),
                               literal.position);
+          } else if constexpr (std::is_same_v<Value, bool>) {
+            return make_typed(Const{.value = value}, boolean_type(), literal.position);
           } else if constexpr (std::is_same_v<Value, DecimalLiteral>) {
             auto decimal = parse_decimal(value.text, literal.position);
             if (!decimal.has_value()) {
@@ -408,10 +417,18 @@ class Analyzer {
   }
 
   targets.reserve(select.targets.size());
+  std::unordered_set<std::int16_t> seen;
+  seen.reserve(select.targets.size());
   for (const auto& target : select.targets) {
     auto attribute = analyzer.find_attribute(target);
     if (!attribute.has_value()) {
       return std::unexpected{std::move(attribute.error())};
+    }
+    if (!seen.insert(attribute.value()->attnum).second) {
+      return std::unexpected{make_error(
+          sqlstate::duplicate_column,
+          std::format("column \"{}\" appears more than once in the select list", target.name),
+          target.position)};
     }
     if (auto error = add_target(*attribute.value(), target.position)) {
       return std::unexpected{std::move(error.value())};

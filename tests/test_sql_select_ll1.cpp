@@ -138,6 +138,8 @@ const std::array accepted{
     "SELECT * FROM t WHERE a = -0.5 AND b = 'it''s'",
     "SELECT * FROM t WHERE a = 9223372036854775808",
     "SELECT * FROM t WHERE a = NULL",
+    "SELECT * FROM t WHERE active = TRUE AND FALSE OR (TRUE IS NOT NULL)",
+    "SELECT * FROM t WHERE true = false",
     "SELECT * FROM t WHERE 'yes'",
     "SELECT * FROM t WHERE qty AND id = 1",
     "SELECT * FROM missing WHERE unknown",
@@ -201,6 +203,9 @@ const std::array rejected{
     "SELECT 1.5 FROM t",
     "SELECT 'a' FROM t",
     "SELECT NULL FROM t",
+    "SELECT TRUE FROM t",
+    "SELECT FALSE FROM t",
+    "SELECT * FROM t WHERE a IS TRUE",
     "SELECT * FROM t WHERE (a = 1 LIMIT 5)",
 };
 
@@ -253,8 +258,9 @@ TEST(SqlSelectLl1, AgreesWithReferenceOnSingleTokenMutations) {
       "SELECT a, b FROM t WHERE (a = 1 OR b IS NOT NULL) AND c >= 2;",
       "SELECT * FROM t WHERE a = (b IS NULL)",
   };
-  const std::array replacements{"x", "SELECT", "FROM", "WHERE", "AND", "OR", "IS", "NOT", "NULL",
-                                "1", "'a'",    "=",    ",",     "(",   ")",  "*",  ";"};
+  const std::array replacements{"TRUE", "FALSE", "x",   "SELECT", "FROM", "WHERE", "AND",
+                                "OR",   "IS",    "NOT", "NULL",   "1",    "'a'",   "=",
+                                ",",    "(",     ")",   "*",      ";"};
   for (const auto* seed : seeds) {
     const auto original = tokens_of(seed);
     // Keep SELECT and the final EOF: this test compares SELECT recognizers,

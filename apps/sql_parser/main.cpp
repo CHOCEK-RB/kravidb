@@ -245,6 +245,10 @@ struct Options {
       return "NOT";
     case sql::Keyword::null:
       return "NULL";
+    case sql::Keyword::true_:
+      return "TRUE";
+    case sql::Keyword::false_:
+      return "FALSE";
     default:
       return "KEYWORD";
   }

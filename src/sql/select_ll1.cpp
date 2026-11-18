@@ -75,6 +75,10 @@ auto terminal_name(const T& term) -> std::string_view {
           return "NOT";
         case Keyword::null:
           return "NULL";
+        case Keyword::true_:
+          return "TRUE";
+        case Keyword::false_:
+          return "FALSE";
         default:
           return "keyword";
       }
@@ -206,7 +210,9 @@ auto diagnostic(const ll1::Symbol& symbol, const Token& token, const Token& next
         return unsupported("'*' mixed with columns", token);
       }
       if (token.kind == TokenKind::integer_literal || token.kind == TokenKind::decimal_literal ||
-          token.kind == TokenKind::string_literal || terminal(token) == keyword(Keyword::null)) {
+          token.kind == TokenKind::string_literal || terminal(token) == keyword(Keyword::null) ||
+          terminal(token) == keyword(Keyword::true_) ||
+          terminal(token) == keyword(Keyword::false_)) {
         return unsupported("expressions in the select list", token);
       }
     }
@@ -304,6 +310,8 @@ auto select_grammar() -> std::span<const Production> {
       {.left = N::literal, .right = {T{.kind = TokenKind::decimal_literal}}},
       {.left = N::literal, .right = {T{.kind = TokenKind::string_literal}}},
       {.left = N::literal, .right = {keyword(Keyword::null)}},
+      {.left = N::literal, .right = {keyword(Keyword::true_)}},
+      {.left = N::literal, .right = {keyword(Keyword::false_)}},
       {.left = N::comparison, .right = {T{.kind = TokenKind::equal}}},
       {.left = N::comparison, .right = {T{.kind = TokenKind::not_equal}}},
       {.left = N::comparison, .right = {T{.kind = TokenKind::less}}},
