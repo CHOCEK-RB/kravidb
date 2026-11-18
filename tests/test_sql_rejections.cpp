@@ -158,6 +158,9 @@ const std::array rejection_cases{
     RejectionCase{.name = "unknown_column_in_null_test", .sql = "SELECT * FROM items WHERE note IS NULL", .sqlstate = sqlstate::undefined_column, .at = "note"},
     RejectionCase{.name = "unknown_column_deep", .sql = "SELECT * FROM items WHERE (id = 1 OR (qty > 2 AND nope = 3))", .sqlstate = sqlstate::undefined_column, .at = "nope"},
     RejectionCase{.name = "boolean_is_not_numeric", .sql = "SELECT * FROM items WHERE id = TRUE", .sqlstate = sqlstate::datatype_mismatch, .at = "="},
+    RejectionCase{.name = "duplicate_target", .sql = "SELECT id, id FROM items", .sqlstate = sqlstate::duplicate_column, .at = "id", .occurrence = 1},
+    RejectionCase{.name = "duplicate_target_case_insensitive", .sql = "SELECT ID, id FROM items", .sqlstate = sqlstate::duplicate_column, .at = "id"},
+    RejectionCase{.name = "duplicate_unknown_target", .sql = "SELECT nope, nope FROM items", .sqlstate = sqlstate::undefined_column, .at = "nope"},
 
     // --- Incompatible types (42804) -------------------------------------------------------------
     RejectionCase{.name = "type_bigint_vs_varchar", .sql = "SELECT * FROM items WHERE id = 'one'", .sqlstate = sqlstate::datatype_mismatch, .at = "="},
@@ -272,6 +275,7 @@ TEST(SqlRejectionMatrixCoverage, CoversEveryReadSqlstate) {
       sqlstate::feature_not_supported,
       sqlstate::undefined_table,
       sqlstate::undefined_column,
+      sqlstate::duplicate_column,
       sqlstate::datatype_mismatch,
       sqlstate::numeric_value_out_of_range,
       sqlstate::invalid_parameter_value,

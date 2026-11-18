@@ -417,10 +417,18 @@ class Analyzer {
   }
 
   targets.reserve(select.targets.size());
+  std::unordered_set<std::int16_t> seen;
+  seen.reserve(select.targets.size());
   for (const auto& target : select.targets) {
     auto attribute = analyzer.find_attribute(target);
     if (!attribute.has_value()) {
       return std::unexpected{std::move(attribute.error())};
+    }
+    if (!seen.insert(attribute.value()->attnum).second) {
+      return std::unexpected{make_error(
+          sqlstate::duplicate_column,
+          std::format("column \"{}\" appears more than once in the select list", target.name),
+          target.position)};
     }
     if (auto error = add_target(*attribute.value(), target.position)) {
       return std::unexpected{std::move(error.value())};

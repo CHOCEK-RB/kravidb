@@ -265,6 +265,16 @@ representar sus esquemas, pero estos no validan tuplas físicas de esos tipos.
 Los catálogos nuevos incluyen ambos tipos en `kd_type`; abrir un catálogo antiguo
 sin esas entradas produce `XX001`, sin migrarlo ni reescribirlo automáticamente.
 
+### Política de proyecciones repetidas
+
+La lista explícita de `SELECT` **rechaza**, no advierte, columnas repetidas.
+Después de resolver cada nombre se comprueba su `attnum`: `SELECT id, id FROM t`
+y `SELECT ID, id FROM t` fallan con SQLSTATE `42701` en la segunda aparición.
+`SELECT id, name FROM t` y `SELECT * FROM t` siguen siendo válidos. Los nombres
+se resuelven de izquierda a derecha antes de detectar duplicados, por lo que
+`SELECT nope, nope FROM t` devuelve `42703` si `nope` no existe.
+El parser ya rechaza mezclar `*` con columnas explícitas.
+
 ## 🌳 Árbol B y Grado $t$
 
 El índice implementa un Árbol B conforme a la especificación clásica de Cormen, Leiserson, Rivest y Stein (**CLRS**), parametrizado por su grado mínimo $t \ge 2$:

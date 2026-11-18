@@ -192,7 +192,7 @@ TEST_F(SqlAnalyzerTest, ExpandsStarToEveryColumnInAttnumOrder) {
 }
 
 TEST_F(SqlAnalyzerTest, ResolvesExplicitTargetsInSelectListOrder) {
-  auto query = prepare("SELECT price, id, price FROM products");
+  auto query = prepare("SELECT price, id, name FROM products");
   ASSERT_TRUE(query.has_value()) << query.error().message;
   ASSERT_EQ(query->targets.size(), 3U);
 
@@ -200,7 +200,49 @@ TEST_F(SqlAnalyzerTest, ResolvesExplicitTargetsInSelectListOrder) {
   EXPECT_EQ(query->targets.at(0).name, "price");
   EXPECT_EQ(query->targets.at(0).attnum, price_attnum);
   EXPECT_EQ(query->targets.at(1).attnum, 1);
-  EXPECT_EQ(query->targets.at(2).attnum, price_attnum);
+  EXPECT_EQ(query->targets.at(2).attnum, 2);
+}
+
+TEST_F(SqlAnalyzerTest, RejectsDuplicateTargetsAtTheSecondOccurrence) {
+  const storage::RelCache cache{catalog()};
+  for (const auto* text :
+       {"SELECT id, id FROM products", "SELECT ID, id FROM products",
+        "SELECT name, id, name FROM products", "SELECT id,\n  ID FROM products"}) {
+    auto statement = sql::parse(text);
+    ASSERT_TRUE(statement.has_value());
+    const auto& targets = std::get<SelectStmt>(*statement).targets;
+    const auto second_position = targets.back().position;
+    for (const bool cached : {false, true}) {
+      auto query = cached ? sql::prepare_query(text, cache) : prepare(text);
+      ASSERT_FALSE(query.has_value()) << text;
+      EXPECT_EQ(query.error().sqlstate, sqlstate::duplicate_column);
+      EXPECT_EQ(query.error().position, second_position);
+      EXPECT_EQ(query.error().position.line, second_position.line);
+      EXPECT_EQ(query.error().position.column, second_position.column);
+      EXPECT_NE(query.error().message.find(targets.back().name), std::string::npos);
+    }
+  }
+}
+
+TEST_F(SqlAnalyzerTest, ResolvesUnknownTargetsBeforeCheckingDuplicates) {
+  const storage::RelCache cache{catalog()};
+  for (const auto* text :
+       {"SELECT nope, nope FROM products", "SELECT id, nope, id FROM products"}) {
+    for (const bool cached : {false, true}) {
+      auto query = cached ? sql::prepare_query(text, cache) : prepare(text);
+      ASSERT_FALSE(query.has_value());
+      EXPECT_EQ(query.error().sqlstate, sqlstate::undefined_column);
+      EXPECT_EQ(query.error().position, position_of(text, "nope"));
+    }
+  }
+}
+
+TEST_F(SqlAnalyzerTest, AcceptsDistinctTargetsAndStarWithBothEntryPoints) {
+  const storage::RelCache cache{catalog()};
+  for (const auto* text : {"SELECT id, name FROM products", "SELECT * FROM products"}) {
+    EXPECT_TRUE(prepare(text).has_value()) << text;
+    EXPECT_TRUE(sql::prepare_query(text, cache).has_value()) << text;
+  }
 }
 
 TEST_F(SqlAnalyzerTest, BuildsTypedWhereTree) {
@@ -486,6 +528,19 @@ TEST(SqlAnalyzerCatalog, RejectsRelationThatIsNotATable) {
   EXPECT_EQ(query.error().sqlstate, sqlstate::wrong_object_type);
 }
 
+TEST(SqlAnalyzerCatalog, DuplicateDetectionUsesResolvedAttnumNotSpelling) {
+  auto table =
+      fake_table("t", {attribute("id", storage::int8_oid), attribute("alias", storage::int8_oid)});
+  table.attributes.at(1).attnum = table.attributes.at(0).attnum;
+  FakeCatalog catalog{{table}};
+  constexpr std::string_view text = "SELECT id, alias FROM t";
+  auto query = analyze_with(catalog, text);
+  ASSERT_FALSE(query.has_value());
+  EXPECT_EQ(query.error().sqlstate, sqlstate::duplicate_column);
+  EXPECT_EQ(query.error().position, position_of(text, "alias"));
+  EXPECT_EQ(catalog.mutations(), 0);
+}
+
 TEST(SqlAnalyzerCatalog, RejectsInvalidDecimalTypmod) {
   // encode_typmod accepts precision up to 255; storage only represents 18.
   constexpr std::uint8_t too_precise = 19;
@@ -666,6 +721,14 @@ TEST_F(SqlAnalyzerFileCatalog, RelCacheOverRealCatalog) {
   EXPECT_EQ(query->relation, storage::kd_namespace_oid);
   ASSERT_EQ(query->targets.size(), 1U);
   EXPECT_EQ(query->targets.at(0).attnum, 2);
+}
+
+TEST_F(SqlAnalyzerFileCatalog, RejectsDuplicateTargetsAgainstRealCatalog) {
+  constexpr std::string_view text = "SELECT oid, OID FROM kd_type";
+  auto query = prepare(text);
+  ASSERT_FALSE(query.has_value());
+  EXPECT_EQ(query.error().sqlstate, sqlstate::duplicate_column);
+  EXPECT_EQ(query.error().position, position_of(text, "OID"));
 }
 
 }  // namespace
