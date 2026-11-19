@@ -85,8 +85,7 @@ struct DecimalType {
 };
 
 /// \brief Supported SQL type names.
-/// `BOOLEAN` is reserved for expression/catalog types, not column declarations.
-enum class TypeNameKind : std::uint8_t { bigint, varchar, decimal, float8 };
+enum class TypeNameKind : std::uint8_t { bigint, varchar, decimal, float8, boolean };
 
 /// \brief SQL type name before conversion to a storage field type.
 struct TypeName {

@@ -146,11 +146,22 @@ TEST(SqlParser, ParsesFloatDeclarationsAndIntegerAliases) {
   EXPECT_EQ(std::get<AlterTableAddColumnStmt>(*alter).column.type.kind, TypeNameKind::float8);
 }
 
-TEST(SqlParser, BooleanIsNotADeclarableType) {
-  constexpr std::string_view create = "CREATE TABLE t (active BOOLEAN)";
-  expect_error(create, sqlstate::syntax_error, position_of(create, "BOOLEAN"));
+TEST(SqlParser, ParsesBooleanDeclarations) {
+  constexpr std::string_view create = "CREATE TABLE t (id BIGINT, active BOOLEAN)";
+  auto statement = sql::parse(create);
+  ASSERT_TRUE(statement.has_value()) << statement.error().message;
+  const auto& columns = std::get<CreateTableStmt>(*statement).columns;
+  ASSERT_EQ(columns.size(), 2U);
+  EXPECT_EQ(columns.at(1).type.kind, TypeNameKind::boolean);
+  EXPECT_FALSE(columns.at(1).type.decimal.has_value());
+  EXPECT_EQ(columns.at(1).type.position, position_of(create, "BOOLEAN"));
+
   constexpr std::string_view alter = "ALTER TABLE t ADD COLUMN active BOOLEAN";
-  expect_error(alter, sqlstate::syntax_error, position_of(alter, "BOOLEAN"));
+  auto alter_statement = sql::parse(alter);
+  ASSERT_TRUE(alter_statement.has_value()) << alter_statement.error().message;
+  const auto& column = std::get<AlterTableAddColumnStmt>(*alter_statement).column;
+  EXPECT_EQ(column.type.kind, TypeNameKind::boolean);
+  EXPECT_EQ(column.type.position, position_of(alter, "BOOLEAN"));
 }
 
 TEST(SqlParser, ParsesBooleanLiteralsWithValuesAndPositions) {

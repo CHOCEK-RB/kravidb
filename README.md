@@ -182,9 +182,8 @@ Palabras reservadas: `add`, `alter`, `and`, `bigint`, `boolean`, `column`, `crea
 `not`, `null`, `numeric`, `or`, `primary`, `select`, `set`, `table`, `text`, `unique`,
 `true`, `update`, `values`, `varchar`, `where`.
 
-`INT` e `INTEGER` son alias de `BIGINT`. `FLOAT` es un tipo declarable;
-`BOOLEAN` se reserva para tipos del catálogo y expresiones, no para declaraciones
-de columnas SQL. `TRUE` y `FALSE` son literales booleanos.
+`INT` e `INTEGER` son alias de `BIGINT`. `FLOAT` y `BOOLEAN` son tipos
+declarables; `TRUE` y `FALSE` son literales booleanos.
 
 ### Posiciones y errores
 

@@ -472,6 +472,11 @@ auto Parser::parse_type_name() -> SqlResult<TypeName> {
     return TypeName{
         .kind = TypeNameKind::float8, .decimal = std::nullopt, .position = token.position};
   }
+  if (at_keyword(Keyword::boolean)) {
+    advance();
+    return TypeName{
+        .kind = TypeNameKind::boolean, .decimal = std::nullopt, .position = token.position};
+  }
   if (at_keyword(Keyword::varchar) || at_keyword(Keyword::text)) {
     advance();
     return TypeName{

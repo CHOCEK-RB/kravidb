@@ -18,8 +18,7 @@
 ///   executing the conversion is outside the analyzer's scope.
 /// - `VARCHAR` is comparable only with `VARCHAR`.
 /// - `BOOLEAN` is comparable only with `BOOLEAN`.
-///   It can come from catalog columns, `TRUE`/`FALSE` or expressions, but is not
-///   a declarable SQL column type.
+///   It can come from declared catalog columns, `TRUE`/`FALSE` or expressions.
 /// - The `NULL` literal is comparable with every type.
 /// - `AND`, `OR` and `WHERE` need `BOOLEAN` operands (or `NULL`).
 /// - A numeric literal compared with a `DECIMAL(p,s)` column must have at most

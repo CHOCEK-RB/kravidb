@@ -35,7 +35,7 @@ inline constexpr Oid numeric_oid = 12;
 /// \brief OID of the double-precision `float8` base type.
 inline constexpr Oid float8_oid = 13;
 
-/// \brief OID of the `bool` base type (not declarable in SQL).
+/// \brief OID of the `bool` base type.
 inline constexpr Oid bool_oid = 14;
 
 /// \brief OID of the `nbtree` access method.
