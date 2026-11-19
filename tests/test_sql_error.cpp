@@ -36,6 +36,10 @@ TEST(SqlError, PositionZeroMeansUnknown) {
   EXPECT_EQ(SourcePosition{first_byte}.offset, first_byte);
 }
 
+TEST(SqlError, DuplicateColumnHasStableSqlstate) {
+  EXPECT_EQ(sqlstate::duplicate_column, "42701");
+}
+
 TEST(SqlError, ResultCarriesValueOrError) {
   const auto value = SqlResult<int>{answer};
   ASSERT_TRUE(value.has_value());

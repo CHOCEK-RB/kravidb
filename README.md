@@ -176,10 +176,14 @@ printf "SELECT 1;" | xmake run kravidb_lexer
 `SEMICOLON` y `EOF` se agrega después, incluso si la sentencia no termina en `;`. La tabla
 muestra ambas filas y el flujo resumido termina con `<EOF>`.
 
-Palabras reservadas: `add`, `alter`, `and`, `bigint`, `column`, `create`, `decimal`,
-`delete`, `drop`, `exists`, `from`, `if`, `index`, `insert`, `int8`, `into`, `is`, `key`,
+Palabras reservadas: `add`, `alter`, `and`, `bigint`, `boolean`, `column`, `create`, `decimal`,
+`delete`, `drop`, `exists`, `false`, `float`, `from`, `if`, `index`, `insert`, `int`, `int8`,
+`integer`, `into`, `is`, `key`,
 `not`, `null`, `numeric`, `or`, `primary`, `select`, `set`, `table`, `text`, `unique`,
-`update`, `values`, `varchar`, `where`.
+`true`, `update`, `values`, `varchar`, `where`.
+
+`INT` e `INTEGER` son alias de `BIGINT`. `FLOAT` y `BOOLEAN` son tipos
+declarables; `TRUE` y `FALSE` son literales booleanos.
 
 ### Posiciones y errores
 
@@ -197,15 +201,21 @@ xmake test
 
 <br>
 
-## Validación sintáctica de SELECT
+## Análisis sintáctico de SELECT (LL(1) + SDT)
 
-El recorrido de una consulta es `texto → lexer → tokens → validador LL(1) → AST →
-análisis semántico`. Solo las sentencias que empiezan con `SELECT` pasan por el
-validador; `INSERT`, `UPDATE`, `DELETE`, `CREATE`, `DROP` y `ALTER` conservan el
-parser anterior.
+El recorrido de una consulta es `texto → lexer → tokens → LL(1)+SDT → AST →
+analyzer`. Solo las sentencias que empiezan con `SELECT` pasan por el motor
+LL(1); `INSERT`, `UPDATE`, `DELETE`, `CREATE`, `DROP` y `ALTER` conservan el
+parser recursivo.
 
-`kravidb::sql::validate_select(tokens)` comprueba exactamente un `SELECT`, con `;`
-opcional y un token final `end_of_input`.
+`kravidb::sql::parse_select_ll1(tokens)` analiza exactamente un `SELECT`, con `;`
+opcional y un token final `end_of_input`, y construye su `SelectStmt` en la misma
+pasada mediante una traducción dirigida por la sintaxis (SDT) S-atribuida: al
+expandir una producción se apila un marcador de reducción debajo de su lado
+derecho, los terminales reconocidos empujan su token a una pila de valores y, al
+desapilar el marcador, se ejecuta la acción semántica de la producción. No hay
+una segunda pasada: el AST sale directamente del LL(1). `validate_select(tokens)`
+sigue disponible como envoltorio que solo acepta o rechaza.
 
 La gramática está representada como datos en `src/sql/select_ll1.cpp`:
 
@@ -224,7 +234,7 @@ predicate      → primary predicate_tail
 predicate_tail → comparison primary | IS not_opt NULL | ε
 not_opt        → NOT | ε
 primary        → ( expr ) | identifier | literal
-literal        → integer | decimal | string | NULL
+literal        → integer | decimal | string | NULL | TRUE | FALSE
 comparison     → = | <> | < | <= | > | >=
 semicolon_opt  → ; | ε
 ```
@@ -232,14 +242,71 @@ semicolon_opt  → ; | ε
 `!=` y `<>` comparten token. La tabla `M[no terminal, siguiente terminal]` se
 construye con FIRST/FOLLOW y detección de conflictos. Los terminales distinguen
 `TokenKind` y `Keyword`, porque todas las palabras reservadas comparten categoría.
-El motor usa una pila explícita y ofrece un callback opcional de traza:
+El motor usa una pila explícita, sin recursión, y ofrece un callback opcional de
+traza:
 
 ```cpp
-auto result = kravidb::sql::validate_select(tokens, [](const auto& step) {
+auto select = kravidb::sql::parse_select_ll1(tokens, [](const auto& step) {
   // step.action: expand, match, accept o error.
   // step.token_index, step.stack_size y step.production permiten seguir el análisis.
 });
+// select: SqlResult<SelectStmt>, listo para el analyzer.
 ```
+
+Los marcadores del SDT no aparecen en la traza: `step.stack` solo contiene
+símbolos de la gramática. Las listas conservan el orden del texto y `AND`/`OR` se
+asocian a la izquierda. La tabla producción → acción está en
+[`parser_ll1/GRAMMAR.md`](parser_ll1/GRAMMAR.md).
+
+### Tipos en el análisis semántico
+
+El analyzer resuelve los OIDs `int8`, `varchar`, `numeric`, `float8` y `bool`
+del catálogo a los tipos SQL `bigint`, `varchar`, `decimal`, `float` y `boolean`.
+Las comparaciones numéricas admiten promoción implícita
+`BIGINT → DECIMAL → FLOAT`; el árbol tipado conserva el tipo original de cada
+operando. `BOOLEAN` solo es comparable con `BOOLEAN`, salvo `NULL`, que es
+compatible con cualquier tipo. `WHERE`, `AND` y `OR` requieren booleanos o `NULL`.
+
+Por ejemplo, `weight > 3`, `weight > 3.5` y `active = TRUE` son válidos si
+`weight` es FLOAT y `active` es BOOLEAN. `name > 3` (con `name` VARCHAR) y
+`active AND weight` fallan con SQLSTATE `42804`.
+
+Este soporte se limita a metadatos y análisis: los valores FLOAT/BOOLEAN todavía
+no tienen encoding de filas ni soporte de executor/API. `RelCache` puede
+representar sus esquemas, pero estos no validan tuplas físicas de esos tipos.
+Los catálogos nuevos incluyen ambos tipos en `kd_type`; abrir un catálogo antiguo
+sin esas entradas produce `XX001`, sin migrarlo ni reescribirlo automáticamente.
+
+### Política de proyecciones repetidas
+
+La lista explícita de `SELECT` **rechaza**, no advierte, columnas repetidas.
+Después de resolver cada nombre se comprueba su `attnum`: `SELECT id, id FROM t`
+y `SELECT ID, id FROM t` fallan con SQLSTATE `42701` en la segunda aparición.
+`SELECT id, name FROM t` y `SELECT * FROM t` siguen siendo válidos. Los nombres
+se resuelven de izquierda a derecha antes de detectar duplicados, por lo que
+`SELECT nope, nope FROM t` devuelve `42703` si `nope` no existe.
+El parser ya rechaza mezclar `*` con columnas explícitas.
+
+### Vista semántica en terminal
+
+`apps/sql_semantic` es un visor FTXUI del resultado del analyzer. Muestra el
+catálogo demo, el AST decorado con tipos y posiciones, y la resolución de cada
+columna a su `attnum`. No ejecuta la consulta: solo resuelve metadatos y tipos.
+
+```bash
+# TUI interactiva
+xmake build kravidb_semantic
+xmake run kravidb_semantic
+
+# AST decorado por consola; exit 1 si hay error léxico, sintáctico o semántico
+xmake run kravidb_semantic --print --query "SELECT * FROM students;"
+```
+
+La TUI usa un catálogo en memoria con `students`, `courses` y `enrollments`;
+las columnas cubren `BIGINT`, `VARCHAR`, `FLOAT` y `BOOLEAN`. Teclas: `e` o `/`
+para editar, `Enter` para analizar, `d` para el siguiente demo y `q` para salir.
+En terminales angostas se ocultan las posiciones; `--print` siempre las incluye.
+La descripción completa está en [`semantic_analyzer/README.md`](semantic_analyzer/README.md).
 
 ## 🌳 Árbol B y Grado $t$
 
@@ -323,16 +390,20 @@ kravidb/
 │   ├── cli/main.cpp          # Punto de entrada de la CLI
 │   ├── api/main.cpp          # Punto de entrada del servidor HTTP
 │   ├── sql_lexer/main.cpp    # Visor de tokens SQL con FTXUI
-│   └── sql_parser/main.cpp   # Visor de la traza LL(1) con FTXUI
+│   ├── sql_parser/main.cpp   # Visor de la traza LL(1) con FTXUI
+│   └── sql_semantic/main.cpp # Visor del catálogo, AST decorado y errores semánticos
 ├── parser_ll1/               # Documentación del parser LL(1)
-│   └── GRAMMAR.md            # Gramática, FIRST/FOLLOW y tabla M[A,a]
+│   └── GRAMMAR.md            # Gramática, FIRST/FOLLOW, tabla M[A,a] y acciones del SDT
+├── semantic_analyzer/        # Documentación del analyzer y su visor
+│   └── README.md             # Flujo, catálogo demo, uso y alcance
 ├── benchmarks/               # Arnés de rendimiento Google Benchmark
 │   └── benchmark.cpp         # Comparativa Index Scan vs Full Table Scan
 ├── docs/
 │   └── md/                   # Documentación generada con `xmake docs` (ignorada)
 ├── src/
 │   ├── kravidb.cppm          # Preludio público exportador del motor
-│   ├── sql/                  # Lexer, parser y analyzer SQL
+│   ├── sql/                  # Lexer, parser, analyzer y formateador SQL
+│   │   └── explain.*         # AST decorado para consola y FTXUI
 │   ├── api/                  # API HTTP REST (cpp-httplib)
 │   │   ├── json.{cpp,cppm}   # Serializador JSON ligero
 │   │   ├── request.*         # Parser del subconjunto JSON de las rutas

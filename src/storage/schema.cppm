@@ -94,6 +94,10 @@ class Schema {
     for (std::size_t index = 0; index < columns_.size(); ++index) {
       const auto& col = columns_.at(index);
       const auto& field = fields.at(index);
+      // FLOAT/BOOLEAN columns are metadata only; row encoding is not implemented.
+      if (col.type == FieldType::Float || col.type == FieldType::Boolean) {
+        return false;
+      }
       if (col.type == FieldType::Int && !std::holds_alternative<std::int64_t>(field)) {
         return false;
       }

@@ -8,6 +8,14 @@ namespace {
 namespace sql = kravidb::sql;
 namespace ll1 = sql::ll1;
 
+/// \brief 1-based offset (as stored in SourcePosition) of a byte offset from find/rfind.
+auto one_based(std::size_t offset) -> std::size_t {
+  if (offset == std::string_view::npos) {
+    throw std::invalid_argument{"needle not found in SQL text"};
+  }
+  return offset + 1;
+}
+
 auto tokens_of(std::string_view text) -> std::vector<sql::Token> {
   auto tokens = sql::tokenize(text);
   if (!tokens.has_value()) {
@@ -138,6 +146,8 @@ const std::array accepted{
     "SELECT * FROM t WHERE a = -0.5 AND b = 'it''s'",
     "SELECT * FROM t WHERE a = 9223372036854775808",
     "SELECT * FROM t WHERE a = NULL",
+    "SELECT * FROM t WHERE active = TRUE AND FALSE OR (TRUE IS NOT NULL)",
+    "SELECT * FROM t WHERE true = false",
     "SELECT * FROM t WHERE 'yes'",
     "SELECT * FROM t WHERE qty AND id = 1",
     "SELECT * FROM missing WHERE unknown",
@@ -201,6 +211,9 @@ const std::array rejected{
     "SELECT 1.5 FROM t",
     "SELECT 'a' FROM t",
     "SELECT NULL FROM t",
+    "SELECT TRUE FROM t",
+    "SELECT FALSE FROM t",
+    "SELECT * FROM t WHERE a IS TRUE",
     "SELECT * FROM t WHERE (a = 1 LIMIT 5)",
 };
 
@@ -223,15 +236,21 @@ auto compare_with_reference(std::string_view text) -> void {
   const auto validation = sql::validate_select(tokens);
   ASSERT_EQ(validation.has_value(), reference.has_value());
   const auto actual = sql::parse_tokens(tokens);
+  const auto translated = sql::parse_select_ll1(tokens);
   ASSERT_EQ(actual.has_value(), reference.has_value());
+  ASSERT_EQ(translated.has_value(), reference.has_value());
   if (!reference.has_value()) {
     EXPECT_EQ(validation.error().sqlstate, reference.error().sqlstate);
     EXPECT_EQ(validation.error().position, reference.error().position);
     EXPECT_EQ(actual.error().sqlstate, reference.error().sqlstate);
     EXPECT_EQ(actual.error().position, reference.error().position);
+    // One engine: the parser, the SDT and the validator report the same error.
+    EXPECT_EQ(actual.error(), translated.error());
+    EXPECT_EQ(validation.error(), translated.error());
   } else {
     EXPECT_EQ(fingerprint(std::get<sql::SelectStmt>(*actual)),
               fingerprint(std::get<sql::SelectStmt>(*reference)));
+    EXPECT_EQ(fingerprint(*translated), fingerprint(std::get<sql::SelectStmt>(*reference)));
   }
 }
 
@@ -253,8 +272,9 @@ TEST(SqlSelectLl1, AgreesWithReferenceOnSingleTokenMutations) {
       "SELECT a, b FROM t WHERE (a = 1 OR b IS NOT NULL) AND c >= 2;",
       "SELECT * FROM t WHERE a = (b IS NULL)",
   };
-  const std::array replacements{"x", "SELECT", "FROM", "WHERE", "AND", "OR", "IS", "NOT", "NULL",
-                                "1", "'a'",    "=",    ",",     "(",   ")",  "*",  ";"};
+  const std::array replacements{"TRUE", "FALSE", "x",   "SELECT", "FROM", "WHERE", "AND",
+                                "OR",   "IS",    "NOT", "NULL",   "1",    "'a'",   "=",
+                                ",",    "(",     ")",   "*",      ";"};
   for (const auto* seed : seeds) {
     const auto original = tokens_of(seed);
     // Keep SELECT and the final EOF: this test compares SELECT recognizers,
@@ -329,25 +349,188 @@ auto fingerprint(const sql::SelectStmt& select) -> std::string {
   return result;
 }
 
-TEST(SqlSelectLl1, IterativeAstMatchesRecursiveAstForGeneratedExpressions) {
-  const std::array atoms{
-      "a", "1", "-0.5", "'it''s'", "NULL", "(a = 1 OR b = 2)", "9223372036854775808"};
+TEST(SqlSelectLl1, SdtAstMatchesRecursiveAstForGeneratedExpressions) {
+  const std::array atoms{"a",
+                         "1",
+                         "-0.5",
+                         "'it''s'",
+                         "NULL",
+                         "TRUE",
+                         "FALSE",
+                         "(a = 1 OR b = 2)",
+                         "9223372036854775808"};
   const std::array suffixes{"",      " IS NULL", " IS NOT NULL", " = (1)", " <> b",
                             " != b", " < 1",     " <= 1",        " > 1",   " >= 1"};
-  for (const auto* atom : atoms) {
-    for (const auto* suffix : suffixes) {
-      const std::string text = std::format(
-          "SELECT a, b FROM t WHERE {}{} AND c = 3 AND d = 4 OR e = 5 OR f = 6;", atom, suffix);
-      SCOPED_TRACE(text);
-      const auto tokens = tokens_of(text);
-      const auto reference = sql::detail::parse_tokens_recursive_reference(tokens);
-      const auto actual = sql::parse_tokens(tokens);
-      ASSERT_TRUE(reference.has_value());
-      ASSERT_TRUE(actual.has_value());
-      EXPECT_EQ(fingerprint(std::get<sql::SelectStmt>(*actual)),
-                fingerprint(std::get<sql::SelectStmt>(*reference)));
+  const std::array shapes{
+      "SELECT a, b FROM t WHERE {}{} AND c = 3 AND d = 4 OR e = 5 OR f = 6;",
+      "SELECT * FROM t WHERE x = 0 OR ({}{}) AND (y = 1 OR z = 2)",
+  };
+  for (const auto* shape : shapes) {
+    for (const auto* atom : atoms) {
+      for (const auto* suffix : suffixes) {
+        const std::string text = std::vformat(shape, std::make_format_args(atom, suffix));
+        SCOPED_TRACE(text);
+        const auto tokens = tokens_of(text);
+        const auto reference = sql::detail::parse_tokens_recursive_reference(tokens);
+        const auto actual = sql::parse_tokens(tokens);
+        const auto translated = sql::parse_select_ll1(tokens);
+        ASSERT_TRUE(reference.has_value());
+        ASSERT_TRUE(actual.has_value());
+        ASSERT_TRUE(translated.has_value());
+        const auto expected = fingerprint(std::get<sql::SelectStmt>(*reference));
+        EXPECT_EQ(fingerprint(std::get<sql::SelectStmt>(*actual)), expected);
+        EXPECT_EQ(fingerprint(*translated), expected);
+      }
     }
   }
+}
+
+TEST(SqlSelectLl1, SdtHasOneActionPerProduction) {
+  // parse_select_ll1 selects actions by production number; a grammar change
+  // must update the action table (and GRAMMAR.md) together.
+  EXPECT_EQ(ll1::select_grammar().size(), 38U);
+  EXPECT_TRUE(sql::parse_select_ll1(tokens_of("SELECT * FROM t")).has_value());
+}
+
+TEST(SqlSelectLl1, SdtBuildsTargetsInSourceOrder) {
+  const auto star = sql::parse_select_ll1(tokens_of("SELECT * FROM users;"));
+  ASSERT_TRUE(star.has_value());
+  EXPECT_TRUE(star->targets.empty());
+  EXPECT_EQ(star->table.name, "users");
+  EXPECT_EQ(star->where, nullptr);
+
+  const std::string_view text = "SELECT c, a, b FROM t";
+  const auto list = sql::parse_select_ll1(tokens_of(text));
+  ASSERT_TRUE(list.has_value());
+  ASSERT_EQ(list->targets.size(), 3U);
+  EXPECT_EQ(list->targets.at(0).name, "c");
+  EXPECT_EQ(list->targets.at(1).name, "a");
+  EXPECT_EQ(list->targets.at(2).name, "b");
+  EXPECT_EQ(list->targets.at(0).position.offset, one_based(text.find('c')));
+  EXPECT_EQ(list->table.position.offset, one_based(text.rfind('t')));
+}
+
+TEST(SqlSelectLl1, SdtFoldsBooleanChainsLeftAndKeepsPrecedence) {
+  // a OR b AND c OR d  ==  (a OR (b AND c)) OR d
+  const std::string_view text = "SELECT * FROM t WHERE a OR b AND c OR d";
+  const auto select = sql::parse_select_ll1(tokens_of(text));
+  ASSERT_TRUE(select.has_value());
+  const auto& outer = std::get<sql::BinaryExpr>(select->where->node);
+  EXPECT_EQ(outer.op, sql::BinaryOp::or_);
+  EXPECT_EQ(outer.position.offset, one_based(text.rfind("OR")));
+  EXPECT_EQ(std::get<sql::ColumnRef>(outer.right->node).name.name, "d");
+  const auto& inner = std::get<sql::BinaryExpr>(outer.left->node);
+  EXPECT_EQ(inner.op, sql::BinaryOp::or_);
+  EXPECT_EQ(inner.position.offset, one_based(text.find("OR")));
+  EXPECT_EQ(std::get<sql::ColumnRef>(inner.left->node).name.name, "a");
+  const auto& conjunction = std::get<sql::BinaryExpr>(inner.right->node);
+  EXPECT_EQ(conjunction.op, sql::BinaryOp::and_);
+  EXPECT_EQ(std::get<sql::ColumnRef>(conjunction.left->node).name.name, "b");
+  EXPECT_EQ(std::get<sql::ColumnRef>(conjunction.right->node).name.name, "c");
+}
+
+TEST(SqlSelectLl1, SdtBuildsPredicatesLiteralsAndDropsParentheses) {
+  const std::string_view text =
+      "SELECT * FROM t WHERE ((a IS NOT NULL)) AND b >= 9223372036854775808 AND c = TRUE";
+  const auto select = sql::parse_select_ll1(tokens_of(text));
+  ASSERT_TRUE(select.has_value());
+  const auto& second_and = std::get<sql::BinaryExpr>(select->where->node);
+  const auto& first_and = std::get<sql::BinaryExpr>(second_and.left->node);
+
+  const auto& null_check = std::get<sql::BinaryExpr>(first_and.left->node);
+  EXPECT_EQ(null_check.op, sql::BinaryOp::is_not_null);
+  EXPECT_EQ(null_check.position.offset, one_based(text.find("IS")));
+  EXPECT_EQ(null_check.right, nullptr);
+  EXPECT_EQ(std::get<sql::ColumnRef>(null_check.left->node).name.name, "a");
+
+  const auto& big = std::get<sql::BinaryExpr>(first_and.right->node);
+  EXPECT_EQ(big.op, sql::BinaryOp::ge);
+  EXPECT_EQ(big.position.offset, one_based(text.find(">=")));
+  const auto& big_value = std::get<sql::Literal>(big.right->node);
+  EXPECT_EQ(std::get<sql::DecimalLiteral>(big_value.value).text, "9223372036854775808");
+
+  const auto& boolean = std::get<sql::BinaryExpr>(second_and.right->node);
+  EXPECT_TRUE(std::get<bool>(std::get<sql::Literal>(boolean.right->node).value));
+}
+
+TEST(SqlSelectLl1, TraceHidesSdtMarkersAndMatchesValidator) {
+  const auto view = ll1::select_grammar();
+  const std::vector<ll1::Production> grammar{view.begin(), view.end()};
+  const auto tokens = tokens_of("SELECT a, b FROM t WHERE (a = 1 OR b IS NOT NULL) AND c <> 'x';");
+  std::vector<ll1::TraceStep> parsed;
+  std::vector<ll1::TraceStep> validated;
+  ASSERT_TRUE(sql::parse_select_ll1(tokens, [&](const auto& step) { parsed.push_back(step); }));
+  ASSERT_TRUE(sql::validate_select(tokens, [&](const auto& step) { validated.push_back(step); }));
+  ASSERT_EQ(parsed.size(), validated.size());
+  for (std::size_t index = 0; index < parsed.size(); ++index) {
+    const auto& step = parsed.at(index);
+    EXPECT_EQ(step.action, validated.at(index).action);
+    EXPECT_EQ(step.token_index, validated.at(index).token_index);
+    EXPECT_EQ(step.production, validated.at(index).production);
+    EXPECT_EQ(step.stack, validated.at(index).stack);
+    EXPECT_EQ(step.stack_size, step.stack.size()) << "step " << index;
+    if (index + 1 == parsed.size()) {
+      continue;
+    }
+    // With markers hidden the visible stack evolves exactly as in a pure LL(1)
+    // recognizer: an expansion replaces the top by the right-hand side and a
+    // match pops one terminal.
+    const auto next = parsed.at(index + 1).stack.size();
+    if (step.action == ll1::TraceAction::expand) {
+      EXPECT_EQ(next + 1, step.stack.size() + grammar.at(*step.production).right.size())
+          << "step " << index;
+    } else if (step.action == ll1::TraceAction::match) {
+      EXPECT_EQ(next + 1, step.stack.size()) << "step " << index;
+    }
+  }
+  EXPECT_EQ(parsed.back().action, ll1::TraceAction::accept);
+}
+
+TEST(SqlSelectLl1, SdtErrorsKeepSqlstateMessageAndPosition) {
+  const std::string_view text = "SELECT a FROM t WHERE a = 1 LIMIT 5";
+  const auto tokens = tokens_of(text);
+  std::vector<ll1::TraceStep> steps;
+  const auto result =
+      sql::parse_select_ll1(tokens, [&](const auto& step) { steps.push_back(step); });
+  ASSERT_FALSE(result.has_value());
+  EXPECT_EQ(result.error().sqlstate, sql::sqlstate::feature_not_supported);
+  EXPECT_EQ(result.error().message, "LIMIT is not supported");
+  EXPECT_EQ(result.error().position.offset, one_based(text.find("LIMIT")));
+  ASSERT_FALSE(steps.empty());
+  EXPECT_EQ(steps.back().action, ll1::TraceAction::error);
+  EXPECT_EQ(steps.back().stack_size, steps.back().stack.size());
+
+  const auto syntax = sql::parse_select_ll1(tokens_of("SELECT a FROM t WHERE a ="));
+  ASSERT_FALSE(syntax.has_value());
+  EXPECT_EQ(syntax.error().sqlstate, sql::sqlstate::syntax_error);
+  EXPECT_TRUE(
+      syntax.error().message.starts_with("syntax error at line 1, column 26 at end of input"))
+      << syntax.error().message;
+}
+
+TEST(SqlSelectLl1, SdtBuildsLongBooleanChainsWithoutRecursion) {
+  constexpr std::size_t conjunction_count = 10000;
+  std::string text = "SELECT * FROM t WHERE a = 1";
+  for (std::size_t count = 0; count < conjunction_count; ++count) {
+    text += " AND a = 1";
+  }
+  auto parsed = sql::parse_tokens(tokens_of(text));
+  ASSERT_TRUE(parsed.has_value());
+  const auto& select = std::get<sql::SelectStmt>(*parsed);
+  // Left fold: the spine of AND nodes runs down the left children.
+  std::size_t spine = 0;
+  const sql::Expr* node = select.where.get();
+  while (const auto* binary = std::get_if<sql::BinaryExpr>(&node->node)) {
+    if (binary->op != sql::BinaryOp::and_) {
+      break;
+    }
+    EXPECT_EQ(std::get<sql::BinaryExpr>(binary->right->node).op, sql::BinaryOp::eq);
+    node = binary->left.get();
+    ++spine;
+  }
+  EXPECT_EQ(spine, conjunction_count);
+  parsed = sql::parse_tokens(tokens_of("SELECT * FROM t"));  // destroys the deep tree
+  EXPECT_TRUE(parsed.has_value());
 }
 
 TEST(SqlSelectLl1, DmlAndDdlStillUseTheirOriginalParser) {

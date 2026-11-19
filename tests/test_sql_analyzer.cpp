@@ -192,7 +192,7 @@ TEST_F(SqlAnalyzerTest, ExpandsStarToEveryColumnInAttnumOrder) {
 }
 
 TEST_F(SqlAnalyzerTest, ResolvesExplicitTargetsInSelectListOrder) {
-  auto query = prepare("SELECT price, id, price FROM products");
+  auto query = prepare("SELECT price, id, name FROM products");
   ASSERT_TRUE(query.has_value()) << query.error().message;
   ASSERT_EQ(query->targets.size(), 3U);
 
@@ -200,7 +200,49 @@ TEST_F(SqlAnalyzerTest, ResolvesExplicitTargetsInSelectListOrder) {
   EXPECT_EQ(query->targets.at(0).name, "price");
   EXPECT_EQ(query->targets.at(0).attnum, price_attnum);
   EXPECT_EQ(query->targets.at(1).attnum, 1);
-  EXPECT_EQ(query->targets.at(2).attnum, price_attnum);
+  EXPECT_EQ(query->targets.at(2).attnum, 2);
+}
+
+TEST_F(SqlAnalyzerTest, RejectsDuplicateTargetsAtTheSecondOccurrence) {
+  const storage::RelCache cache{catalog()};
+  for (const auto* text :
+       {"SELECT id, id FROM products", "SELECT ID, id FROM products",
+        "SELECT name, id, name FROM products", "SELECT id,\n  ID FROM products"}) {
+    auto statement = sql::parse(text);
+    ASSERT_TRUE(statement.has_value());
+    const auto& targets = std::get<SelectStmt>(*statement).targets;
+    const auto second_position = targets.back().position;
+    for (const bool cached : {false, true}) {
+      auto query = cached ? sql::prepare_query(text, cache) : prepare(text);
+      ASSERT_FALSE(query.has_value()) << text;
+      EXPECT_EQ(query.error().sqlstate, sqlstate::duplicate_column);
+      EXPECT_EQ(query.error().position, second_position);
+      EXPECT_EQ(query.error().position.line, second_position.line);
+      EXPECT_EQ(query.error().position.column, second_position.column);
+      EXPECT_NE(query.error().message.find(targets.back().name), std::string::npos);
+    }
+  }
+}
+
+TEST_F(SqlAnalyzerTest, ResolvesUnknownTargetsBeforeCheckingDuplicates) {
+  const storage::RelCache cache{catalog()};
+  for (const auto* text :
+       {"SELECT nope, nope FROM products", "SELECT id, nope, id FROM products"}) {
+    for (const bool cached : {false, true}) {
+      auto query = cached ? sql::prepare_query(text, cache) : prepare(text);
+      ASSERT_FALSE(query.has_value());
+      EXPECT_EQ(query.error().sqlstate, sqlstate::undefined_column);
+      EXPECT_EQ(query.error().position, position_of(text, "nope"));
+    }
+  }
+}
+
+TEST_F(SqlAnalyzerTest, AcceptsDistinctTargetsAndStarWithBothEntryPoints) {
+  const storage::RelCache cache{catalog()};
+  for (const auto* text : {"SELECT id, name FROM products", "SELECT * FROM products"}) {
+    EXPECT_TRUE(prepare(text).has_value()) << text;
+    EXPECT_TRUE(sql::prepare_query(text, cache).has_value()) << text;
+  }
 }
 
 TEST_F(SqlAnalyzerTest, BuildsTypedWhereTree) {
@@ -364,6 +406,106 @@ TEST_F(SqlAnalyzerTest, ConvertsDecimalLiteralsExactly) {
       (storage::Decimal{.scale = 1, .unscaled = std::numeric_limits<std::int64_t>::min()}));
 }
 
+// --- FLOAT and BOOLEAN -------------------------------------------------------------------------
+
+class SqlAnalyzerTypes : public ::testing::Test {
+  protected:
+  void SetUp() override {
+    static_cast<void>(catalog_.create_table(
+        transaction_, {.name = "measurements",
+                       .attributes = {attribute("id", storage::int8_oid),
+                                      attribute("weight", storage::float8_oid),
+                                      attribute("active", storage::bool_oid),
+                                      attribute("name", storage::varchar_oid),
+                                      attribute("exact", storage::numeric_oid)},
+                       .primary_key = "id"}));
+  }
+
+  [[nodiscard]] auto catalog() const -> const storage::SchemaCatalog& { return catalog_; }
+  auto prepare(std::string_view text) -> SqlResult<Query> {
+    return sql::prepare_query(text, catalog_, transaction_);
+  }
+
+  private:
+  storage::SchemaCatalog catalog_;
+  storage::Transaction transaction_{};
+};
+
+TEST_F(SqlAnalyzerTypes, ResolvesFloatAndBooleanFromCatalogAndCache) {
+  const storage::RelCache cache{catalog()};
+  constexpr std::string_view text = "SELECT weight, active FROM measurements";
+  for (const bool cached : {false, true}) {
+    auto query = cached ? sql::prepare_query(text, cache) : prepare(text);
+    ASSERT_TRUE(query.has_value()) << query.error().message;
+    ASSERT_EQ(query->targets.size(), 2U);
+    EXPECT_EQ(query->targets.at(0).type.kind, TypeKind::float8);
+    EXPECT_EQ(type_name(query->targets.at(0).type), "float");
+    EXPECT_EQ(query->targets.at(1).type.kind, TypeKind::boolean);
+    EXPECT_EQ(type_name(query->targets.at(1).type), "boolean");
+  }
+  auto star = sql::prepare_query("SELECT * FROM measurements", cache);
+  ASSERT_TRUE(star.has_value()) << star.error().message;
+  EXPECT_EQ(star->targets.at(1).type.kind, TypeKind::float8);
+  EXPECT_EQ(star->targets.at(2).type.kind, TypeKind::boolean);
+}
+
+TEST_F(SqlAnalyzerTypes, AcceptsNumericPromotionInBothDirections) {
+  for (const auto* predicate : {"weight > 3", "weight > 3.5", "3 < weight", "3.5 < weight",
+                                "weight = id", "id = weight", "weight <= exact", "exact >= weight",
+                                "weight = weight", "weight = NULL", "weight IS NOT NULL"}) {
+    const auto text = std::format("SELECT * FROM measurements WHERE {}", predicate);
+    auto query = prepare(text);
+    ASSERT_TRUE(query.has_value()) << text << ": " << query.error().message;
+    EXPECT_EQ(query->where->type.kind, TypeKind::boolean);
+  }
+  auto query = prepare("SELECT * FROM measurements WHERE weight > 3.5");
+  ASSERT_TRUE(query.has_value());
+  const auto& comparison = where_op(*query);
+  EXPECT_EQ(comparison.left->type.kind, TypeKind::float8);
+  EXPECT_EQ(comparison.right->type.kind, TypeKind::decimal);
+}
+
+TEST_F(SqlAnalyzerTypes, PreservesBooleanConstantValuesAndPositions) {
+  for (const auto* literal : {"TRUE", "FALSE"}) {
+    const auto text = std::format("SELECT * FROM measurements WHERE active = {}", literal);
+    auto query = prepare(text);
+    ASSERT_TRUE(query.has_value()) << query.error().message;
+    const auto& right = *where_op(*query).right;
+    EXPECT_EQ(right.type.kind, TypeKind::boolean);
+    EXPECT_EQ(std::get<bool>(std::get<Const>(right.node).value),
+              std::string_view{literal} == "TRUE");
+    EXPECT_EQ(right.position, position_of(text, literal));
+  }
+  for (const auto* predicate : {"active", "TRUE", "FALSE", "active AND TRUE", "FALSE OR active",
+                                "active = NULL", "active IS NULL", "TRUE = FALSE"}) {
+    auto query = prepare(std::format("SELECT * FROM measurements WHERE {}", predicate));
+    ASSERT_TRUE(query.has_value()) << predicate << ": " << query.error().message;
+    EXPECT_EQ(query->where->type.kind, TypeKind::boolean);
+  }
+}
+
+TEST_F(SqlAnalyzerTypes, RejectsIncompatibleTypesWith42804) {
+  const std::array cases{std::pair{"name > 3", ">"},
+                         std::pair{"active AND weight", "weight"},
+                         std::pair{"weight OR active", "weight"},
+                         std::pair{"active = 1", "="},
+                         std::pair{"weight = TRUE", "="},
+                         std::pair{"FALSE = exact", "="},
+                         std::pair{"active = 'yes'", "="},
+                         std::pair{"weight > name", ">"},
+                         std::pair{"weight", "weight"}};
+  const storage::RelCache cache{catalog()};
+  for (const auto& [predicate, error_at] : cases) {
+    const auto text = std::format("SELECT * FROM measurements WHERE {}", predicate);
+    for (const bool cached : {false, true}) {
+      auto query = cached ? sql::prepare_query(text, cache) : prepare(text);
+      ASSERT_FALSE(query.has_value()) << text;
+      EXPECT_EQ(query.error().sqlstate, sqlstate::datatype_mismatch);
+      EXPECT_EQ(query.error().position, position_of(text, error_at));
+    }
+  }
+}
+
 // --- Catalog edge cases ------------------------------------------------------------------------
 
 TEST(SqlAnalyzerCatalog, UnknownColumnFailsBeforeReadingAnything) {
@@ -384,6 +526,19 @@ TEST(SqlAnalyzerCatalog, RejectsRelationThatIsNotATable) {
   auto query = analyze_with(catalog, "SELECT * FROM t_pkey");
   ASSERT_FALSE(query.has_value());
   EXPECT_EQ(query.error().sqlstate, sqlstate::wrong_object_type);
+}
+
+TEST(SqlAnalyzerCatalog, DuplicateDetectionUsesResolvedAttnumNotSpelling) {
+  auto table =
+      fake_table("t", {attribute("id", storage::int8_oid), attribute("alias", storage::int8_oid)});
+  table.attributes.at(1).attnum = table.attributes.at(0).attnum;
+  FakeCatalog catalog{{table}};
+  constexpr std::string_view text = "SELECT id, alias FROM t";
+  auto query = analyze_with(catalog, text);
+  ASSERT_FALSE(query.has_value());
+  EXPECT_EQ(query.error().sqlstate, sqlstate::duplicate_column);
+  EXPECT_EQ(query.error().position, position_of(text, "alias"));
+  EXPECT_EQ(catalog.mutations(), 0);
 }
 
 TEST(SqlAnalyzerCatalog, RejectsInvalidDecimalTypmod) {
@@ -566,6 +721,14 @@ TEST_F(SqlAnalyzerFileCatalog, RelCacheOverRealCatalog) {
   EXPECT_EQ(query->relation, storage::kd_namespace_oid);
   ASSERT_EQ(query->targets.size(), 1U);
   EXPECT_EQ(query->targets.at(0).attnum, 2);
+}
+
+TEST_F(SqlAnalyzerFileCatalog, RejectsDuplicateTargetsAgainstRealCatalog) {
+  constexpr std::string_view text = "SELECT oid, OID FROM kd_type";
+  auto query = prepare(text);
+  ASSERT_FALSE(query.has_value());
+  EXPECT_EQ(query.error().sqlstate, sqlstate::duplicate_column);
+  EXPECT_EQ(query.error().position, position_of(text, "OID"));
 }
 
 }  // namespace

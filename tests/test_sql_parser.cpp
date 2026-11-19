@@ -78,6 +78,8 @@ auto render(const Expr& expr) -> std::string {
                   return std::format("dec:{}", value.text);
                 } else if constexpr (std::is_same_v<Value, std::string>) {
                   return std::format("'{}'", value);
+                } else if constexpr (std::is_same_v<Value, bool>) {
+                  return value ? "true" : "false";
                 } else {
                   return "null";
                 }
@@ -126,6 +128,65 @@ auto expect_error(std::string_view text, std::string_view sqlstate, SourcePositi
 }
 
 // --- Accepted statements -----------------------------------------------------------------------
+
+TEST(SqlParser, ParsesFloatDeclarationsAndIntegerAliases) {
+  for (const auto* alias : {"INT", "INTEGER", "BIGINT", "INT8"}) {
+    const auto text = std::format("CREATE TABLE t (id {}, weight FLOAT)", alias);
+    auto statement = sql::parse(text);
+    ASSERT_TRUE(statement.has_value()) << statement.error().message;
+    const auto& columns = std::get<CreateTableStmt>(*statement).columns;
+    ASSERT_EQ(columns.size(), 2U);
+    EXPECT_EQ(columns.at(0).type.kind, TypeNameKind::bigint);
+    EXPECT_EQ(columns.at(1).type.kind, TypeNameKind::float8);
+    EXPECT_FALSE(columns.at(1).type.decimal.has_value());
+    EXPECT_EQ(columns.at(1).type.position, position_of(text, "FLOAT"));
+  }
+  auto alter = sql::parse("ALTER TABLE t ADD COLUMN weight FLOAT");
+  ASSERT_TRUE(alter.has_value()) << alter.error().message;
+  EXPECT_EQ(std::get<AlterTableAddColumnStmt>(*alter).column.type.kind, TypeNameKind::float8);
+}
+
+TEST(SqlParser, ParsesBooleanDeclarations) {
+  constexpr std::string_view create = "CREATE TABLE t (id BIGINT, active BOOLEAN)";
+  auto statement = sql::parse(create);
+  ASSERT_TRUE(statement.has_value()) << statement.error().message;
+  const auto& columns = std::get<CreateTableStmt>(*statement).columns;
+  ASSERT_EQ(columns.size(), 2U);
+  EXPECT_EQ(columns.at(1).type.kind, TypeNameKind::boolean);
+  EXPECT_FALSE(columns.at(1).type.decimal.has_value());
+  EXPECT_EQ(columns.at(1).type.position, position_of(create, "BOOLEAN"));
+
+  constexpr std::string_view alter = "ALTER TABLE t ADD COLUMN active BOOLEAN";
+  auto alter_statement = sql::parse(alter);
+  ASSERT_TRUE(alter_statement.has_value()) << alter_statement.error().message;
+  const auto& column = std::get<AlterTableAddColumnStmt>(*alter_statement).column;
+  EXPECT_EQ(column.type.kind, TypeNameKind::boolean);
+  EXPECT_EQ(column.type.position, position_of(alter, "BOOLEAN"));
+}
+
+TEST(SqlParser, ParsesBooleanLiteralsWithValuesAndPositions) {
+  constexpr std::string_view text = "SELECT * FROM t WHERE TrUe = fAlSe";
+  auto statement = sql::parse(text);
+  ASSERT_TRUE(statement.has_value()) << statement.error().message;
+  const auto& comparison = std::get<BinaryExpr>(std::get<SelectStmt>(*statement).where->node);
+  const auto& left = std::get<Literal>(comparison.left->node);
+  const auto& right = std::get<Literal>(comparison.right->node);
+  EXPECT_TRUE(std::get<bool>(left.value));
+  EXPECT_FALSE(std::get<bool>(right.value));
+  EXPECT_EQ(left.position, position_of(text, "TrUe"));
+  EXPECT_EQ(right.position, position_of(text, "fAlSe"));
+  EXPECT_EQ(where_of("SELECT * FROM t WHERE TRUE AND FALSE OR active"),
+            "(or (and true false) active)");
+
+  auto insert = sql::parse("INSERT INTO t VALUES (TRUE, FALSE)");
+  ASSERT_TRUE(insert.has_value()) << insert.error().message;
+  const auto& values = std::get<InsertStmt>(*insert).values;
+  EXPECT_TRUE(std::get<bool>(values.at(0).value));
+  EXPECT_FALSE(std::get<bool>(values.at(1).value));
+  auto update = sql::parse("UPDATE t SET active = FALSE WHERE active = TRUE");
+  ASSERT_TRUE(update.has_value()) << update.error().message;
+  EXPECT_FALSE(std::get<bool>(std::get<UpdateStmt>(*update).assignments.at(0).value.value));
+}
 
 TEST(SqlParser, ParsesSelectStar) {
   constexpr std::string_view text = "SELECT * FROM users";

@@ -7,6 +7,24 @@ namespace {
 
 namespace sql = kravidb::sql;
 
+TEST(SqlLexerTypes, RecognizesFloatBooleanAndIntegerAliasesCaseInsensitively) {
+  auto tokens = sql::tokenize("FlOaT BoOlEaN TrUe FaLsE InT InTeGeR");
+  ASSERT_TRUE(tokens.has_value()) << tokens.error().message;
+  const std::array keywords{sql::Keyword::float_, sql::Keyword::boolean, sql::Keyword::true_,
+                            sql::Keyword::false_, sql::Keyword::int_,    sql::Keyword::integer};
+  ASSERT_EQ(tokens->size(), keywords.size() + 1);
+  for (std::size_t index = 0; index < keywords.size(); ++index) {
+    EXPECT_EQ(tokens->at(index).kind, sql::TokenKind::keyword);
+    EXPECT_EQ(tokens->at(index).keyword, keywords.at(index));
+  }
+  auto identifiers = sql::tokenize("floating boolean_flag true_value falsehood integer_id");
+  ASSERT_TRUE(identifiers.has_value());
+  for (const auto& token : *identifiers) {
+    EXPECT_TRUE(token.kind == sql::TokenKind::identifier ||
+                token.kind == sql::TokenKind::end_of_input);
+  }
+}
+
 using namespace sql;
 
 constexpr std::size_t byte_1 = 1;

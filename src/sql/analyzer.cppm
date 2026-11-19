@@ -5,19 +5,29 @@
 /// `Catalog`, assigns SQL types and checks that expressions are well typed.
 /// It never touches the heap: a statement that fails here has read no rows.
 ///
+/// Projection policy:
+/// - Explicit SELECT targets must resolve to distinct `attnum` values.
+/// - Duplicates are rejected (not warned about) at the second occurrence.
+/// - Names are resolved left to right before checking for duplicates, so an
+///   unknown column still produces `42703`, including `nope, nope`.
+/// - `*` expands once in attribute order; mixing `*` and columns is a parse error.
+///
 /// Type rules:
-/// - `BIGINT` and `DECIMAL` are comparable with each other.
+/// - `BIGINT`, `DECIMAL` and `FLOAT` are comparable through implicit numeric
+///   promotion (`BIGINT` -> `DECIMAL` -> `FLOAT`). Operand types are preserved;
+///   executing the conversion is outside the analyzer's scope.
 /// - `VARCHAR` is comparable only with `VARCHAR`.
 /// - `BOOLEAN` is comparable only with `BOOLEAN`.
+///   It can come from declared catalog columns, `TRUE`/`FALSE` or expressions.
 /// - The `NULL` literal is comparable with every type.
 /// - `AND`, `OR` and `WHERE` need `BOOLEAN` operands (or `NULL`).
 /// - A numeric literal compared with a `DECIMAL(p,s)` column must have at most
 ///   `p - s` integer digits.
 ///
 /// Errors: `42P01` unknown relation, `42809` relation is not a table,
-/// `42703` unknown column, `42804` incompatible types, `22003` numeric value
-/// out of range, `22023` invalid DECIMAL precision or scale in the catalog,
-/// `0A000` statement other than SELECT.
+/// `42703` unknown column, `42701` duplicate target, `42804` incompatible types, `22003` numeric
+/// value out of range, `22023` invalid DECIMAL precision or scale in the catalog, `0A000` statement
+/// other than SELECT.
 
 export module sql.analyzer;
 

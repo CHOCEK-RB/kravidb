@@ -48,6 +48,12 @@ enum class FieldType : std::uint8_t {
 
   /// \brief Fixed-point decimal (`u8` scale plus `i64` unscaled value).
   Decimal = 2,
+
+  /// \brief FLOAT metadata only; row encoding is not implemented.
+  Float = 3,
+
+  /// \brief BOOLEAN metadata only; row encoding is not implemented.
+  Boolean = 4,
 };
 
 /// \brief Exact fixed-point value: `unscaled / 10^scale`.
