@@ -620,36 +620,31 @@ class FileCatalog::Impl {
       }
       relations_.push_back(std::move(description));
     }
+    rebuild_indexes();
     opened_ = true;
   }
 
   [[nodiscard]] auto lookup_relation(std::string_view name) const -> std::optional<RelationDesc> {
     require_open();
-    const auto found = std::ranges::find_if(
-        relations_,
-        [name](const RelationDesc& candidate) -> bool { return candidate.name == name; });
-    if (found == relations_.end()) {
+    const auto index = relation_index_by_name_.find(std::string{name});
+    if (index == relation_index_by_name_.end()) {
       return std::nullopt;
     }
-    return *found;
+    return relations_.at(index->second);
   }
 
   [[nodiscard]] auto lookup_attribute(Oid relation, std::string_view name) const
       -> std::optional<AttributeDesc> {
     require_open();
-    const auto found = std::ranges::find_if(
-        relations_,
-        [relation](const RelationDesc& candidate) -> bool { return candidate.oid == relation; });
-    if (found == relations_.end()) {
+    const auto columns = attributes_.find(relation);
+    if (columns == attributes_.end()) {
       return std::nullopt;
     }
-    const auto attribute = std::ranges::find_if(
-        found->attributes,
-        [name](const AttributeDesc& candidate) -> bool { return candidate.name == name; });
-    if (attribute == found->attributes.end()) {
+    const auto attribute = columns->second.find(std::string{name});
+    if (attribute == columns->second.end()) {
       return std::nullopt;
     }
-    return *attribute;
+    return attribute->second;
   }
 
   [[nodiscard]] auto relations() const -> std::vector<RelationDesc> {
@@ -658,6 +653,25 @@ class FileCatalog::Impl {
   }
 
   private:
+  auto rebuild_indexes() -> void {
+    relation_index_by_oid_.clear();
+    relation_index_by_name_.clear();
+    attributes_.clear();
+    relation_index_by_oid_.reserve(relations_.size());
+    relation_index_by_name_.reserve(relations_.size());
+    attributes_.reserve(relations_.size());
+    for (std::size_t index = 0; index < relations_.size(); ++index) {
+      const auto& relation = relations_.at(index);
+      relation_index_by_oid_.try_emplace(relation.oid, index);
+      relation_index_by_name_.try_emplace(relation.name, index);
+      auto& columns = attributes_.try_emplace(relation.oid).first->second;
+      columns.reserve(relation.attributes.size());
+      for (const auto& attribute : relation.attributes) {
+        columns.try_emplace(attribute.name, attribute);
+      }
+    }
+  }
+
   auto require_open() const -> void {
     if (!opened_) {
       throw std::logic_error{"kd_catalog: open() has not been called"};
@@ -667,6 +681,9 @@ class FileCatalog::Impl {
   std::filesystem::path root_;
   DirectoryPageSource source_;
   std::vector<RelationDesc> relations_;
+  std::unordered_map<Oid, std::size_t> relation_index_by_oid_;
+  std::unordered_map<std::string, std::size_t> relation_index_by_name_;
+  std::unordered_map<Oid, std::unordered_map<std::string, AttributeDesc>> attributes_;
   bool opened_{false};
 };
 
@@ -733,6 +750,11 @@ RelCache::RelCache(const Catalog& catalog) {
                                   .is_primary_key = attribute.primary_key});
     }
     schemas_.try_emplace(shared->oid, std::make_shared<const Schema>(std::move(columns)));
+    auto& columns_by_name = columns_.try_emplace(shared->oid).first->second;
+    columns_by_name.reserve(shared->attributes.size());
+    for (const auto& attribute : shared->attributes) {
+      columns_by_name.try_emplace(attribute.name, &attribute);
+    }
   }
   std::ranges::sort(relations_, {}, &RelationDesc::oid);
 }
@@ -757,9 +779,11 @@ auto RelCache::require_column(Oid relation_oid, std::string_view name) const -> 
   if (found == by_oid_.end()) {
     throw SqlStateError{"42P01", "relation " + std::to_string(relation_oid) + " does not exist"};
   }
-  for (const auto& attribute : found->second->attributes) {
-    if (attribute.name == name) {
-      return attribute;
+  const auto columns = columns_.find(relation_oid);
+  if (columns != columns_.end()) {
+    const auto attribute = columns->second.find(std::string{name});
+    if (attribute != columns->second.end()) {
+      return *attribute->second;
     }
   }
   throw SqlStateError{"42703", "column '" + std::string{name} + "' does not exist in relation '" +
