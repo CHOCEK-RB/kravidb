@@ -75,7 +75,7 @@ export import sql.ast;
 /// \brief SQL tokens and lexer (`Token`, `TokenKind`, `Keyword`).
 export import sql.lexer;
 
-/// \brief SELECT LL(1) recognizer (`ll1::validate_select`).
+/// \brief SELECT LL(1) parser with SDT (`parse_select_ll1`, `validate_select`).
 export import sql.select_ll1;
 
 /// \brief SELECT parser (`parse`, `parse_tokens`).
