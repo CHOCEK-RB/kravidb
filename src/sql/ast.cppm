@@ -63,6 +63,13 @@ struct BinaryExpr {
 
   BinaryExpr(BinaryOp operation, SourcePosition position, std::unique_ptr<Expr> left,
              std::unique_ptr<Expr> right);
+  BinaryExpr(const BinaryExpr&) = delete;
+  BinaryExpr(BinaryExpr&&) noexcept = default;
+  auto operator=(const BinaryExpr&) -> BinaryExpr& = delete;
+  auto operator=(BinaryExpr&&) noexcept -> BinaryExpr& = default;
+  /// \brief Releases the subtree iteratively: long AND/OR chains are as deep as
+  /// they are long, and recursive destruction would overflow the call stack.
+  ~BinaryExpr();
 };
 
 /// \brief One SQL expression node.
@@ -180,6 +187,24 @@ BinaryExpr::BinaryExpr(BinaryOp operation, SourcePosition position, std::unique_
   }
   if ((this->right == nullptr) != is_null_check) {
     throw std::invalid_argument{"BinaryExpr: right must be null only for IS [NOT] NULL"};
+  }
+}
+
+BinaryExpr::~BinaryExpr() {
+  std::vector<std::unique_ptr<Expr>> pending;
+  pending.push_back(std::move(left));
+  pending.push_back(std::move(right));
+  while (!pending.empty()) {
+    auto expr = std::move(pending.back());
+    pending.pop_back();
+    if (expr == nullptr) {
+      continue;
+    }
+    if (auto* binary = std::get_if<BinaryExpr>(&expr->node)) {
+      // Detach the children first, so destroying this node is shallow.
+      pending.push_back(std::move(binary->left));
+      pending.push_back(std::move(binary->right));
+    }
   }
 }
 
