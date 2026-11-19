@@ -213,7 +213,9 @@ class SchemaCatalog final : public Catalog {
 
   private:
   Oid next_oid_{invalid_oid};
-  std::vector<RelationDesc> relations_;
+  std::unordered_map<Oid, RelationDesc> relations_;
+  std::unordered_map<std::string, Oid> relation_oid_by_name_;
+  std::unordered_map<Oid, std::unordered_map<std::string, AttributeDesc>> attributes_;
 };
 
 inline auto SchemaCatalog::create_table(Transaction& transaction, const TableDef& definition)
@@ -228,60 +230,75 @@ inline auto SchemaCatalog::create_table(Transaction& transaction, const TableDef
     attribute.attnum = static_cast<std::int16_t>(index + 1);
     attribute.primary_key = attribute.name == definition.primary_key;
   }
-  relations_.push_back(std::move(relation));
+
+  relations_.try_emplace(oid, std::move(relation));
+  const auto stored = relations_.find(oid);
+  relation_oid_by_name_.try_emplace(stored->second.name, oid);
+  auto [columns, inserted] = attributes_.try_emplace(oid);
+  static_cast<void>(inserted);
+  for (const auto& attribute : stored->second.attributes) {
+    columns->second.try_emplace(attribute.name, attribute);
+  }
   return oid;
 }
 
 inline auto SchemaCatalog::drop_table(Transaction& transaction, Oid table) -> void {
-  std::erase_if(relations_,
-                [table](const RelationDesc& relation) -> bool { return relation.oid == table; });
+  const auto relation = relations_.find(table);
+  if (relation == relations_.end()) {
+    return;
+  }
+  relation_oid_by_name_.erase(relation->second.name);
+  attributes_.erase(table);
+  relations_.erase(relation);
 }
 
 inline auto SchemaCatalog::create_index(Transaction& transaction, const IndexDef& definition)
     -> Oid {
-  const auto relation =
-      std::ranges::find_if(relations_, [&definition](const RelationDesc& candidate) -> bool {
-        return candidate.oid == definition.relation;
-      });
+  const auto relation = relations_.find(definition.relation);
   if (relation == relations_.end()) {
     throw std::invalid_argument{"index relation does not exist"};
   }
   const Oid oid = ++next_oid_;
-  relation->indexes.push_back(oid);
+  relation->second.indexes.push_back(oid);
   return oid;
 }
 
 inline auto SchemaCatalog::lookup_relation(Transaction& transaction, std::string_view name) const
     -> std::optional<RelationDesc> {
-  const auto relation = std::ranges::find_if(
-      relations_, [name](const RelationDesc& candidate) -> bool { return candidate.name == name; });
+  const auto oid = relation_oid_by_name_.find(std::string{name});
+  if (oid == relation_oid_by_name_.end()) {
+    return std::nullopt;
+  }
+  const auto relation = relations_.find(oid->second);
   if (relation == relations_.end()) {
     return std::nullopt;
   }
-  return *relation;
+  return relation->second;
 }
 
 inline auto SchemaCatalog::lookup_attribute(Transaction& transaction, Oid relation,
                                             std::string_view name) const
     -> std::optional<AttributeDesc> {
-  const auto found_relation = std::ranges::find_if(
-      relations_,
-      [relation](const RelationDesc& candidate) -> bool { return candidate.oid == relation; });
-  if (found_relation == relations_.end()) {
+  const auto columns = attributes_.find(relation);
+  if (columns == attributes_.end()) {
     return std::nullopt;
   }
-  const auto attribute = std::ranges::find_if(
-      found_relation->attributes,
-      [name](const AttributeDesc& candidate) -> bool { return candidate.name == name; });
-  if (attribute == found_relation->attributes.end()) {
+  const auto attribute = columns->second.find(std::string{name});
+  if (attribute == columns->second.end()) {
     return std::nullopt;
   }
-  return *attribute;
+  return attribute->second;
 }
 
 inline auto SchemaCatalog::list_relations(Transaction& transaction) const
     -> std::vector<RelationDesc> {
-  return relations_;
+  std::vector<RelationDesc> result;
+  result.reserve(relations_.size());
+  for (const auto& [oid, relation] : relations_) {
+    result.push_back(relation);
+  }
+  std::ranges::sort(result, {}, &RelationDesc::oid);
+  return result;
 }
 
 /// \brief Read-only catalog backed by one heap file per catalog relation.
@@ -346,6 +363,7 @@ class RelCache {
   std::unordered_map<Oid, std::shared_ptr<const RelationDesc>> by_oid_;
   std::unordered_map<std::string, std::shared_ptr<const RelationDesc>> by_name_;
   std::unordered_map<Oid, std::shared_ptr<const Schema>> schemas_;
+  std::unordered_map<Oid, std::unordered_map<std::string, const AttributeDesc*>> columns_;
 };
 
 }  // namespace kravidb::storage

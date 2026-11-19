@@ -248,20 +248,23 @@ constexpr std::int32_t unconstrained_typmod = -1;
 
 class Analyzer {
   public:
-  explicit Analyzer(const RelationDesc& relation) : relation_{&relation} {}
+  explicit Analyzer(const RelationDesc& relation) : relation_{&relation} {
+    attributes_.reserve(relation.attributes.size());
+    for (const auto& attribute : relation.attributes) {
+      attributes_.try_emplace(attribute.name, &attribute);
+    }
+  }
 
   [[nodiscard]] auto find_attribute(const Identifier& name) const
       -> SqlResult<const AttributeDesc*> {
-    const auto match = std::ranges::find_if(
-        relation_->attributes,
-        [&name](const AttributeDesc& attribute) -> bool { return attribute.name == name.name; });
-    if (match == relation_->attributes.end()) {
+    const auto match = attributes_.find(name.name);
+    if (match == attributes_.end()) {
       return std::unexpected{make_error(
           sqlstate::undefined_column,
           std::format(R"(column "{}" of relation "{}" does not exist)", name.name, relation_->name),
           name.position)};
     }
-    return &*match;
+    return match->second;
   }
 
   [[nodiscard]] auto analyze_expr(const Expr& expr) -> SqlResult<std::unique_ptr<TypedExpr>> {
@@ -364,6 +367,7 @@ class Analyzer {
   }
 
   const RelationDesc* relation_;
+  std::unordered_map<std::string, const AttributeDesc*> attributes_;
 };
 
 [[nodiscard]] auto statement_position(const Stmt& statement) -> SourcePosition {
