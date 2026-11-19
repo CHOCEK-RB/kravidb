@@ -86,3 +86,6 @@ export import sql.query;
 
 /// \brief SELECT analyzer and front-end entry point (`analyze`, `prepare_query`).
 export import sql.analyzer;
+
+/// \brief Decorated AST formatter (`explain_query`, `format_query`).
+export import sql.explain;

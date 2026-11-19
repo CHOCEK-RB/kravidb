@@ -287,6 +287,27 @@ se resuelven de izquierda a derecha antes de detectar duplicados, por lo que
 `SELECT nope, nope FROM t` devuelve `42703` si `nope` no existe.
 El parser ya rechaza mezclar `*` con columnas explícitas.
 
+### Vista semántica en terminal
+
+`apps/sql_semantic` es un visor FTXUI del resultado del analyzer. Muestra el
+catálogo demo, el AST decorado con tipos y posiciones, y la resolución de cada
+columna a su `attnum`. No ejecuta la consulta: solo resuelve metadatos y tipos.
+
+```bash
+# TUI interactiva
+xmake build kravidb_semantic
+xmake run kravidb_semantic
+
+# AST decorado por consola; exit 1 si hay error léxico, sintáctico o semántico
+xmake run kravidb_semantic --print --query "SELECT * FROM students;"
+```
+
+La TUI usa un catálogo en memoria con `students`, `courses` y `enrollments`;
+las columnas cubren `BIGINT`, `VARCHAR`, `FLOAT` y `BOOLEAN`. Teclas: `e` o `/`
+para editar, `Enter` para analizar, `d` para el siguiente demo y `q` para salir.
+En terminales angostas se ocultan las posiciones; `--print` siempre las incluye.
+La descripción completa está en [`semantic_analyzer/README.md`](semantic_analyzer/README.md).
+
 ## 🌳 Árbol B y Grado $t$
 
 El índice implementa un Árbol B conforme a la especificación clásica de Cormen, Leiserson, Rivest y Stein (**CLRS**), parametrizado por su grado mínimo $t \ge 2$:
@@ -369,16 +390,20 @@ kravidb/
 │   ├── cli/main.cpp          # Punto de entrada de la CLI
 │   ├── api/main.cpp          # Punto de entrada del servidor HTTP
 │   ├── sql_lexer/main.cpp    # Visor de tokens SQL con FTXUI
-│   └── sql_parser/main.cpp   # Visor de la traza LL(1) con FTXUI
+│   ├── sql_parser/main.cpp   # Visor de la traza LL(1) con FTXUI
+│   └── sql_semantic/main.cpp # Visor del catálogo, AST decorado y errores semánticos
 ├── parser_ll1/               # Documentación del parser LL(1)
 │   └── GRAMMAR.md            # Gramática, FIRST/FOLLOW, tabla M[A,a] y acciones del SDT
+├── semantic_analyzer/        # Documentación del analyzer y su visor
+│   └── README.md             # Flujo, catálogo demo, uso y alcance
 ├── benchmarks/               # Arnés de rendimiento Google Benchmark
 │   └── benchmark.cpp         # Comparativa Index Scan vs Full Table Scan
 ├── docs/
 │   └── md/                   # Documentación generada con `xmake docs` (ignorada)
 ├── src/
 │   ├── kravidb.cppm          # Preludio público exportador del motor
-│   ├── sql/                  # Lexer, parser y analyzer SQL
+│   ├── sql/                  # Lexer, parser, analyzer y formateador SQL
+│   │   └── explain.*         # AST decorado para consola y FTXUI
 │   ├── api/                  # API HTTP REST (cpp-httplib)
 │   │   ├── json.{cpp,cppm}   # Serializador JSON ligero
 │   │   ├── request.*         # Parser del subconjunto JSON de las rutas
