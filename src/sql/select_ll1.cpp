@@ -1,6 +1,7 @@
 module sql.select_ll1;
 
 import std;
+import sql.ast;
 
 namespace kravidb::sql {
 namespace {
@@ -275,8 +276,9 @@ auto diagnostic(const ll1::Symbol& symbol, const Token& token, const Token& next
 namespace ll1 {
 
 auto select_grammar() -> std::span<const Production> {
-  // Right-recursive tails recognize the same language as the existing parser;
-  // AST construction folds AND/OR left, independently of this recognition order.
+  // Right-recursive tails recognize the same language as the recursive parser;
+  // the SDT actions in parse_select_ll1 fold AND/OR left over these tails.
+  // The order is significant: production numbers select the semantic action (P).
   static const std::vector<Production> grammar{
       {.left = N::statement,
        .right = {keyword(Keyword::select), N::targets, keyword(Keyword::from), N::table,
@@ -382,23 +384,299 @@ auto build_table(std::span<const Production> grammar) -> std::expected<ParseTabl
 
 }  // namespace ll1
 
-auto validate_select(std::span<const Token> tokens, const ll1::TraceCallback& trace)
-    -> SqlResult<void> {
+namespace {
+
+/// \brief Production numbers, in the order of `ll1::select_grammar()`.
+/// \details The semantic action of each production is selected by this number;
+/// `parse_select_ll1` rejects a grammar whose size does not match.
+enum class P : std::uint8_t {
+  statement,
+  targets_star,
+  targets_list,
+  target,
+  targets_tail_more,
+  targets_tail_end,
+  table,
+  where_opt_where,
+  where_opt_empty,
+  expr,
+  or_tail_more,
+  or_tail_end,
+  and_expr,
+  and_tail_more,
+  and_tail_end,
+  predicate,
+  predicate_tail_comparison,
+  predicate_tail_is_null,
+  predicate_tail_empty,
+  not_opt_not,
+  not_opt_empty,
+  primary_paren,
+  primary_column,
+  primary_literal,
+  literal_integer,
+  literal_decimal,
+  literal_string,
+  literal_null,
+  literal_true,
+  literal_false,
+  comparison_eq,
+  comparison_ne,
+  comparison_lt,
+  comparison_le,
+  comparison_gt,
+  comparison_ge,
+  semicolon_opt_semicolon,
+  semicolon_opt_empty,
+  count,
+};
+
+/// \brief Reduction marker: pushed below a production's right-hand side.
+struct Reduce {
+  std::size_t production;
+};
+
+/// \brief Parse-stack entry: a grammar symbol or a semantic marker.
+using Item = std::variant<N, T, Reduce>;
+
+/// \brief Binary operator and the position of its token.
+struct Operator {
+  BinaryOp op;
+  SourcePosition position;
+};
+
+/// \brief Right operand of one OR/AND in a tail, with its operator position.
+struct Operand {
+  SourcePosition position;
+  std::unique_ptr<Expr> expr;
+};
+
+/// \brief Synthesized OR/AND tail. Operands are stored innermost-first: the
+/// right-recursive tail reduces from the end, so appending is O(1) and the left
+/// fold walks the vector backwards.
+struct BooleanTail {
+  std::vector<Operand> operands;
+};
+
+/// \brief Synthesized select-list tail, stored last-first for the same reason.
+struct ReversedTargets {
+  std::vector<Identifier> names;
+};
+
+/// \brief Synthesized `predicate_tail`: nothing, `op primary` or `IS [NOT] NULL`.
+struct PredicateTail {
+  std::optional<Operator> op;
+  std::unique_ptr<Expr> right;
+};
+
+/// \brief Synthesized attribute of one right-hand-side symbol.
+/// \details Terminals contribute the matched `const Token*` (tokens outlive the
+/// parse); every nonterminal contributes exactly one value of its own type.
+using Value = std::variant<std::monostate, const Token*, Identifier, std::vector<Identifier>,
+                           ReversedTargets, std::unique_ptr<Expr>, BooleanTail, PredicateTail,
+                           Operator, bool, Literal, SelectStmt>;
+
+auto make_expr(Expr::Node node) -> std::unique_ptr<Expr> {
+  return std::make_unique<Expr>(Expr{.node = std::move(node)});
+}
+
+auto make_binary(BinaryOp operation, SourcePosition position, std::unique_ptr<Expr> left,
+                 std::unique_ptr<Expr> right) -> std::unique_ptr<Expr> {
+  return make_expr(BinaryExpr{operation, position, std::move(left), std::move(right)});
+}
+
+/// \brief Moves the attribute of right-hand-side symbol `offset` out of `values`.
+template <class Attribute>
+auto take(std::span<Value> values, std::size_t offset) -> Attribute {
+  if (offset >= values.size()) {
+    throw std::out_of_range{"SDT value index out of range"};
+  }
+  return std::get<Attribute>(
+      std::move(*std::next(values.begin(), static_cast<std::ptrdiff_t>(offset))));
+}
+
+auto token_of(std::span<Value> values, std::size_t offset) -> const Token& {
+  return *take<const Token*>(values, offset);
+}
+
+auto identifier_of(const Token& token) -> Identifier {
+  return Identifier{.name = token.text, .position = token.position};
+}
+
+/// \brief Integer literals beyond BIGINT stay exact as decimal text for the analyzer.
+auto integer_literal(const Token& token) -> Literal {
+  std::int64_t value{0};
+  const char* const first = token.text.data();
+  const char* const last = std::next(first, static_cast<std::ptrdiff_t>(token.text.size()));
+  const auto [end, error] = std::from_chars(first, last, value);
+  // 0 = no error. std::errc{} is avoided because clang-tidy flags it under libc++.
+  if (static_cast<int>(error) == 0 && end == last) {
+    return Literal{.value = value, .position = token.position};
+  }
+  return Literal{.value = DecimalLiteral{.text = token.text}, .position = token.position};
+}
+
+/// \brief Left fold of `first (op operand)*`, e.g. `a OR b OR c` -> `(a OR b) OR c`.
+auto fold_left(BinaryOp operation, std::unique_ptr<Expr> first, BooleanTail tail)
+    -> std::unique_ptr<Expr> {
+  auto result = std::move(first);
+  for (auto& operand : std::ranges::reverse_view(tail.operands)) {
+    result = make_binary(operation, operand.position, std::move(result), std::move(operand.expr));
+  }
+  return result;
+}
+
+auto comparison(std::span<Value> values, BinaryOp operation) -> Value {
+  return Operator{.op = operation, .position = token_of(values, 0).position};
+}
+
+/// \brief Semantic action of `production` over the attributes of its right-hand side.
+// NOLINTNEXTLINE(readability-function-size)
+auto reduce(P production, std::span<Value> values) -> Value {
+  switch (production) {
+    case P::statement:  // SELECT targets FROM table where_opt semicolon_opt EOF
+      return SelectStmt{.targets = take<std::vector<Identifier>>(values, 1),
+                        .table = take<Identifier>(values, 3),
+                        .where = take<std::unique_ptr<Expr>>(values, 4)};
+    case P::targets_star:  // '*': an empty list means every column
+      return std::vector<Identifier>{};
+    case P::targets_list: {  // target targets_tail
+      auto names = take<ReversedTargets>(values, 1).names;
+      names.push_back(take<Identifier>(values, 0));
+      std::ranges::reverse(names);
+      return names;
+    }
+    case P::target:
+    case P::table:
+      return identifier_of(token_of(values, 0));
+    case P::targets_tail_more: {  // ',' target targets_tail
+      auto tail = take<ReversedTargets>(values, 2);
+      tail.names.push_back(take<Identifier>(values, 1));
+      return tail;
+    }
+    case P::targets_tail_end:
+      return ReversedTargets{};
+    case P::where_opt_where:  // WHERE expr
+      return take<std::unique_ptr<Expr>>(values, 1);
+    case P::where_opt_empty:
+      return std::unique_ptr<Expr>{};
+    case P::expr:  // and_expr or_tail
+      return fold_left(BinaryOp::or_, take<std::unique_ptr<Expr>>(values, 0),
+                       take<BooleanTail>(values, 1));
+    case P::and_expr:  // predicate and_tail
+      return fold_left(BinaryOp::and_, take<std::unique_ptr<Expr>>(values, 0),
+                       take<BooleanTail>(values, 1));
+    case P::or_tail_more:     // OR and_expr or_tail
+    case P::and_tail_more: {  // AND predicate and_tail
+      auto tail = take<BooleanTail>(values, 2);
+      tail.operands.push_back(Operand{.position = token_of(values, 0).position,
+                                      .expr = take<std::unique_ptr<Expr>>(values, 1)});
+      return tail;
+    }
+    case P::or_tail_end:
+    case P::and_tail_end:
+      return BooleanTail{};
+    case P::predicate: {  // primary predicate_tail
+      auto left = take<std::unique_ptr<Expr>>(values, 0);
+      auto tail = take<PredicateTail>(values, 1);
+      if (!tail.op.has_value()) {
+        return left;
+      }
+      return make_binary(tail.op->op, tail.op->position, std::move(left), std::move(tail.right));
+    }
+    case P::predicate_tail_comparison: {  // comparison primary
+      return PredicateTail{.op = take<Operator>(values, 0),
+                           .right = take<std::unique_ptr<Expr>>(values, 1)};
+    }
+    case P::predicate_tail_is_null:  // IS not_opt NULL; the node is positioned at IS
+      return PredicateTail{
+          .op = Operator{.op = take<bool>(values, 1) ? BinaryOp::is_not_null : BinaryOp::is_null,
+                         .position = token_of(values, 0).position},
+          .right = nullptr};
+    case P::predicate_tail_empty:
+      return PredicateTail{};
+    case P::not_opt_not:
+      return true;
+    case P::not_opt_empty:
+      return false;
+    case P::primary_paren:  // '(' expr ')': parentheses only group, no node
+      return take<std::unique_ptr<Expr>>(values, 1);
+    case P::primary_column:
+      return make_expr(ColumnRef{.name = identifier_of(token_of(values, 0))});
+    case P::primary_literal:
+      return make_expr(take<Literal>(values, 0));
+    case P::literal_integer:
+      return integer_literal(token_of(values, 0));
+    case P::literal_decimal: {
+      const Token& token = token_of(values, 0);
+      return Literal{.value = DecimalLiteral{.text = token.text}, .position = token.position};
+    }
+    case P::literal_string: {
+      const Token& token = token_of(values, 0);
+      return Literal{.value = token.text, .position = token.position};
+    }
+    case P::literal_null:
+      return Literal{.value = NullLiteral{}, .position = token_of(values, 0).position};
+    case P::literal_true:
+    case P::literal_false:
+      return Literal{.value = production == P::literal_true,
+                     .position = token_of(values, 0).position};
+    case P::comparison_eq:
+      return comparison(values, BinaryOp::eq);
+    case P::comparison_ne:  // both '<>' and '!=' lex as not_equal
+      return comparison(values, BinaryOp::ne);
+    case P::comparison_lt:
+      return comparison(values, BinaryOp::lt);
+    case P::comparison_le:
+      return comparison(values, BinaryOp::le);
+    case P::comparison_gt:
+      return comparison(values, BinaryOp::gt);
+    case P::comparison_ge:
+      return comparison(values, BinaryOp::ge);
+    case P::semicolon_opt_semicolon:
+    case P::semicolon_opt_empty:
+    case P::count:
+      break;
+  }
+  return std::monostate{};
+}
+
+/// \brief Grammar symbols of the parse stack, without SDT markers, for traces.
+auto visible_stack(const std::vector<Item>& stack) -> std::vector<ll1::Symbol> {
+  std::vector<ll1::Symbol> symbols;
+  symbols.reserve(stack.size());
+  for (const auto& item : stack) {
+    if (const auto* variable = std::get_if<N>(&item)) {
+      symbols.emplace_back(*variable);
+    } else if (const auto* token = std::get_if<T>(&item)) {
+      symbols.emplace_back(*token);
+    }
+  }
+  return symbols;
+}
+
+}  // namespace
+
+auto parse_select_ll1(std::span<const Token> tokens, const ll1::TraceCallback& trace)
+    -> SqlResult<SelectStmt> {
   std::size_t cursor = 0;
   std::size_t depth = 0;
-  std::vector<ll1::Symbol> stack{N::statement};
+  std::vector<Item> stack{N::statement};
+  std::vector<Value> values;
   const auto emit = [&](ll1::TraceAction action, std::optional<std::size_t> production = {},
                         std::optional<ll1::Cell> cell = {}) -> void {
     if (trace) {
+      auto symbols = visible_stack(stack);
+      const auto size = symbols.size();
       trace(ll1::TraceStep{.action = action,
                            .token_index = cursor,
-                           .stack_size = stack.size(),
+                           .stack_size = size,
                            .production = production,
-                           .stack = stack,
+                           .stack = std::move(symbols),
                            .cell = std::move(cell)});
     }
   };
-  const auto fail = [&](SqlError error) -> SqlResult<void> {
+  const auto fail = [&](SqlError error) -> SqlResult<SelectStmt> {
     emit(ll1::TraceAction::error);
     return std::unexpected{std::move(error)};
   };
@@ -408,19 +686,32 @@ auto validate_select(std::span<const Token> tokens, const ll1::TraceCallback& tr
                          .position = SourcePosition{}});
   }
   static const auto table = ll1::build_table(ll1::select_grammar());
-  if (!table.has_value()) {
+  const auto grammar = ll1::select_grammar();
+  if (!table.has_value() || grammar.size() != static_cast<std::size_t>(P::count)) {
     return fail(SqlError{.sqlstate = std::string{sqlstate::internal_error},
-                         .message = "SELECT grammar has an LL(1) conflict",
+                         .message = table.has_value() ? "SELECT grammar and SDT actions differ"
+                                                      : "SELECT grammar has an LL(1) conflict",
                          .position = SourcePosition{}});
   }
-  const auto grammar = ll1::select_grammar();
   while (!stack.empty()) {
+    if (const auto* marker = std::get_if<Reduce>(&stack.back())) {
+      // Every right-hand-side symbol left exactly one value on top of the stack.
+      const auto arity = checked_at(grammar, marker->production).right.size();
+      const auto first = std::prev(values.end(), static_cast<std::ptrdiff_t>(arity));
+      auto result = reduce(static_cast<P>(marker->production), std::span<Value>{first, arity});
+      values.erase(first, values.end());
+      values.push_back(std::move(result));
+      stack.pop_back();
+      continue;
+    }
     if (cursor >= tokens.size()) {
       return fail(syntax_error(tokens.back()));
     }
     const Token& token = checked_at(tokens, cursor);
     const Token& next = checked_at(tokens, std::min(cursor + 1, tokens.size() - 1));
-    const auto symbol = stack.back();
+    const ll1::Symbol symbol = std::holds_alternative<N>(stack.back())
+                                   ? ll1::Symbol{std::get<N>(stack.back())}
+                                   : ll1::Symbol{std::get<T>(stack.back())};
     if (auto error = diagnostic(symbol, token, next,
                                 cursor == 0 ? nullptr : &checked_at(tokens, cursor - 1), depth)) {
       return fail(std::move(*error));
@@ -431,6 +722,7 @@ auto validate_select(std::span<const Token> tokens, const ll1::TraceCallback& tr
       }
       emit(ll1::TraceAction::match);
       stack.pop_back();
+      values.emplace_back(&token);
       if (token.kind == TokenKind::left_paren) {
         ++depth;
       } else if (token.kind == TokenKind::right_paren) {
@@ -453,15 +745,31 @@ auto validate_select(std::span<const Token> tokens, const ll1::TraceCallback& tr
       return fail(syntax_error(token, expected_terminals(*table, variable)));
     }
     emit(ll1::TraceAction::expand, entry->second, ll1::Cell{variable, terminal(token)});
-    stack.pop_back();
+    stack.back() = Reduce{.production = entry->second};
     const auto& right = checked_at(grammar, entry->second).right;
-    stack.insert(stack.end(), right.rbegin(), right.rend());
+    for (const auto& item : std::ranges::reverse_view(right)) {
+      std::visit([&](const auto& grammar_symbol) -> void { stack.emplace_back(grammar_symbol); },
+                 item);
+    }
   }
   // Reject embedded EOF sentinels, not just text following a semicolon.
   if (cursor != tokens.size()) {
     return fail(syntax_error(checked_at(tokens, cursor)));
   }
+  if (values.size() != 1 || !std::holds_alternative<SelectStmt>(values.back())) {
+    return fail(SqlError{.sqlstate = std::string{sqlstate::internal_error},
+                         .message = "SELECT translation left an unbalanced value stack",
+                         .position = SourcePosition{}});
+  }
   emit(ll1::TraceAction::accept);
+  return std::get<SelectStmt>(std::move(values.back()));
+}
+
+auto validate_select(std::span<const Token> tokens, const ll1::TraceCallback& trace)
+    -> SqlResult<void> {
+  if (auto select = parse_select_ll1(tokens, trace); !select.has_value()) {
+    return std::unexpected{std::move(select.error())};
+  }
   return {};
 }
 

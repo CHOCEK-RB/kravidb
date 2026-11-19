@@ -1,7 +1,9 @@
 /// \file
-/// \brief SQL parser with LL(1) SELECT validation and iterative SELECT AST construction.
+/// \brief SQL parser: SELECT through the LL(1) engine with SDT, the rest by recursive descent.
 ///
-/// \details Grammar accepted by `parse`:
+/// \details SELECT statements are parsed and translated to `SelectStmt` in a
+/// single pass by `parse_select_ll1` (see `sql.select_ll1`); DML and DDL use
+/// the recursive-descent parser. Grammar accepted for SELECT:
 ///
 /// ```text
 /// statement   := select_stmt [ ';' ] end_of_input
@@ -12,7 +14,7 @@
 /// predicate   := primary [ comparison primary | IS [ NOT ] NULL ]
 /// primary     := '(' expr ')' | identifier | literal
 /// comparison  := '=' | '<>' | '!=' | '<' | '<=' | '>' | '>='
-/// literal     := integer | decimal | string | NULL
+/// literal     := integer | decimal | string | NULL | TRUE | FALSE
 /// ```
 ///
 /// Errors use SQLSTATE `42601` (syntax error) or `0A000` (a recognized SQL
@@ -39,8 +41,8 @@ export namespace kravidb::sql {
 [[nodiscard]] auto parse(std::string_view text) -> SqlResult<Stmt>;
 
 namespace detail {
-/// \brief Legacy recursive parser oracle for differential tests only.
-/// \details Bypasses LL(1); production callers must use parse/parse_tokens.
+/// \brief Recursive-descent SELECT parser, kept as an oracle for differential tests only.
+/// \details Bypasses the LL(1) engine; production callers must use parse/parse_tokens.
 [[nodiscard]] auto parse_tokens_recursive_reference(std::span<const Token> tokens)
     -> SqlResult<Stmt>;
 }  // namespace detail
