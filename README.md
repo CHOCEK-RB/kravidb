@@ -202,15 +202,21 @@ xmake test
 
 <br>
 
-## Validación sintáctica de SELECT
+## Análisis sintáctico de SELECT (LL(1) + SDT)
 
-El recorrido de una consulta es `texto → lexer → tokens → validador LL(1) → AST →
-análisis semántico`. Solo las sentencias que empiezan con `SELECT` pasan por el
-validador; `INSERT`, `UPDATE`, `DELETE`, `CREATE`, `DROP` y `ALTER` conservan el
-parser anterior.
+El recorrido de una consulta es `texto → lexer → tokens → LL(1)+SDT → AST →
+analyzer`. Solo las sentencias que empiezan con `SELECT` pasan por el motor
+LL(1); `INSERT`, `UPDATE`, `DELETE`, `CREATE`, `DROP` y `ALTER` conservan el
+parser recursivo.
 
-`kravidb::sql::validate_select(tokens)` comprueba exactamente un `SELECT`, con `;`
-opcional y un token final `end_of_input`.
+`kravidb::sql::parse_select_ll1(tokens)` analiza exactamente un `SELECT`, con `;`
+opcional y un token final `end_of_input`, y construye su `SelectStmt` en la misma
+pasada mediante una traducción dirigida por la sintaxis (SDT) S-atribuida: al
+expandir una producción se apila un marcador de reducción debajo de su lado
+derecho, los terminales reconocidos empujan su token a una pila de valores y, al
+desapilar el marcador, se ejecuta la acción semántica de la producción. No hay
+una segunda pasada: el AST sale directamente del LL(1). `validate_select(tokens)`
+sigue disponible como envoltorio que solo acepta o rechaza.
 
 La gramática está representada como datos en `src/sql/select_ll1.cpp`:
 
@@ -237,14 +243,21 @@ semicolon_opt  → ; | ε
 `!=` y `<>` comparten token. La tabla `M[no terminal, siguiente terminal]` se
 construye con FIRST/FOLLOW y detección de conflictos. Los terminales distinguen
 `TokenKind` y `Keyword`, porque todas las palabras reservadas comparten categoría.
-El motor usa una pila explícita y ofrece un callback opcional de traza:
+El motor usa una pila explícita, sin recursión, y ofrece un callback opcional de
+traza:
 
 ```cpp
-auto result = kravidb::sql::validate_select(tokens, [](const auto& step) {
+auto select = kravidb::sql::parse_select_ll1(tokens, [](const auto& step) {
   // step.action: expand, match, accept o error.
   // step.token_index, step.stack_size y step.production permiten seguir el análisis.
 });
+// select: SqlResult<SelectStmt>, listo para el analyzer.
 ```
+
+Los marcadores del SDT no aparecen en la traza: `step.stack` solo contiene
+símbolos de la gramática. Las listas conservan el orden del texto y `AND`/`OR` se
+asocian a la izquierda. La tabla producción → acción está en
+[`parser_ll1/GRAMMAR.md`](parser_ll1/GRAMMAR.md).
 
 ### Tipos en el análisis semántico
 
@@ -359,7 +372,7 @@ kravidb/
 │   ├── sql_lexer/main.cpp    # Visor de tokens SQL con FTXUI
 │   └── sql_parser/main.cpp   # Visor de la traza LL(1) con FTXUI
 ├── parser_ll1/               # Documentación del parser LL(1)
-│   └── GRAMMAR.md            # Gramática, FIRST/FOLLOW y tabla M[A,a]
+│   └── GRAMMAR.md            # Gramática, FIRST/FOLLOW, tabla M[A,a] y acciones del SDT
 ├── benchmarks/               # Arnés de rendimiento Google Benchmark
 │   └── benchmark.cpp         # Comparativa Index Scan vs Full Table Scan
 ├── docs/
