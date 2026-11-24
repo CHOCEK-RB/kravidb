@@ -20,7 +20,7 @@ auto parse_port(int argc, char** argv) -> int {
     }
     const std::string_view text{argument};
     int parsed = 0;
-    const auto result = std::from_chars(text.data(), text.data() + text.size(), parsed);
+    const auto result = std::from_chars(text.data(), std::to_address(text.end()), parsed);
     // 0 = sin error. Se evita std::errc{} porque clang-tidy lo marca bajo libc++.
     if (static_cast<int>(result.ec) == 0 && parsed > 0) {
       return parsed;
@@ -49,7 +49,7 @@ auto parse_degree() -> int {
   }
   const std::string_view text{raw};
   int parsed = 0;
-  const auto result = std::from_chars(text.data(), text.data() + text.size(), parsed);
+  const auto result = std::from_chars(text.data(), std::to_address(text.end()), parsed);
   // 0 = sin error. Se evita std::errc{} porque clang-tidy lo marca bajo libc++.
   if (static_cast<int>(result.ec) != 0 || parsed < kravidb::api::minimum_engine_degree ||
       parsed > kravidb::api::maximum_engine_degree) {
