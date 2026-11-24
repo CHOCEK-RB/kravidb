@@ -337,6 +337,31 @@ Abre [http://localhost:8080](http://localhost:8080) en el navegador para interac
 
 ### Rutas principales de la API REST
 
+#### Inspección de páginas físicas (sin seeds ni mocks)
+
+Para inspeccionar una carpeta **ya publicada e inmutable** que contiene archivos
+de relaciones (`17000`, `17000.1`, etc.), inicia el servidor con
+`KRAVIDB_PAGE_ROOT` apuntando a esa carpeta. En PowerShell:
+
+```powershell
+$env:KRAVIDB_PAGE_ROOT = "C:\ruta\generacion-publicada"
+xmake run kravidb_api 8080
+```
+
+En este modo, `/api/v1/health` y `/api/v1/config` informan
+`mode: "readonly_pages"`, `data_dir` y `page_size: 8192`.
+`GET /api/v1/pages/0?relation=17000` devuelve el bloque **base cero** con su
+`pd_lsn`, checksum, header, items y todos sus bytes en `raw_hex`. Una relación
+o página ausente devuelve 404; IDs inválidos 400; corrupción de página 500
+con `XX001`. No se crean archivos ni se cargan filas demo. Las rutas de
+escritura y del visualizador legado quedan deshabilitadas para no mezclar datos.
+
+Esto inspecciona archivos publicados, no ensambla una base ni hace recovery.
+La selección automática de la generación activa corresponde a #52.
+Sin la variable se conserva el visualizador legado en memoria, cuyo LSN es
+ahora `0` (sin WAL asignado), nunca un valor sintético derivado del ID.
+Para volver al demo en PowerShell: `Remove-Item Env:KRAVIDB_PAGE_ROOT`.
+
 | Método | Ruta | Descripción |
 |:---|:---|:---|
 | `GET` | `/api/v1/health` | Comprobación de estado del servicio |

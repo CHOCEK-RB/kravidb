@@ -20,9 +20,6 @@ constexpr std::size_t page_header_bytes = 64;
 // Size of a directory slot, in bytes.
 constexpr std::size_t slot_bytes = sizeof(std::uint32_t);
 
-// Base of the synthetic LSN: there is no WAL yet, it is derived from the page identifier.
-constexpr std::int64_t lsn_base = 1000;
-
 // Nanoseconds in a microsecond (the contract expresses Full Scan in microseconds).
 constexpr std::int64_t nanoseconds_per_microsecond = 1000;
 
@@ -122,7 +119,9 @@ auto page_to_json(const storage::RecordStore& records, storage::PageID page_id) 
   const std::size_t display_page = page_id + 1;
   std::string json = "{\"page_id\":" + std::to_string(display_page);
   json += R"(,"header":{"page_id":)" + std::to_string(display_page);
-  json += ",\"lsn\":" + std::to_string(lsn_base + static_cast<std::int64_t>(display_page));
+  // Legacy in-memory records have no WAL. Zero means no assigned LSN; never
+  // manufacture one from the page identifier.
+  json += ",\"lsn\":0";
   json += ",\"slot_count\":" + std::to_string(slot_count);
   json += ",\"free_space_offset\":" + std::to_string(free_space_offset);
   json += ",\"free_space_end\":" + std::to_string(free_space_end) + "}";

@@ -6,6 +6,7 @@ module api.server;
 
 import std;
 import api.handlers;
+import api.pages;
 
 namespace {
 
@@ -44,16 +45,28 @@ auto is_local_origin(std::string_view origin) -> bool {
 
 // Reflects the local origin in CORS responses; the built frontend is served
 // from the same origin and does not need these headers.
-void configure_cors(httplib::Server& server) {
+void configure_cors(httplib::Server& server, bool readonly_pages) {
   server.set_pre_routing_handler(
-      [](const httplib::Request& request,
-         httplib::Response& response) -> httplib::Server::HandlerResponse {
+      [readonly_pages](const httplib::Request& request,
+                       httplib::Response& response) -> httplib::Server::HandlerResponse {
         const auto origin = request.get_header_value("Origin");
         if (is_local_origin(origin)) {
           response.set_header("Access-Control-Allow-Origin", origin);
           response.set_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
           response.set_header("Access-Control-Allow-Headers", "Content-Type");
           response.set_header("Vary", "Origin");
+        }
+        const bool page_read =
+            request.method == "GET" &&
+            (request.path == "/api/v1/health" || request.path == "/api/v1/config" ||
+             request.path.starts_with("/api/v1/pages/"));
+        if (readonly_pages && request.path.starts_with("/api/") && !page_read &&
+            request.method != "OPTIONS") {
+          response.status = kravidb::api::http_bad_request;
+          response.set_content(
+              R"({"sqlstate":"0A000","message":"readonly page inspection: route unavailable"})",
+              "application/json");
+          return httplib::Server::HandlerResponse::Handled;
         }
         return httplib::Server::HandlerResponse::Unhandled;
       });
@@ -88,7 +101,6 @@ namespace kravidb::api {
 // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 auto run_server(int port, int degree, std::string_view bind_address) -> int {
   httplib::Server server;
-  configure_cors(server);
   configure_socket_options(server);
 
   // Counter of served requests, to confirm that the client connects.
@@ -102,18 +114,55 @@ auto run_server(int port, int degree, std::string_view bind_address) -> int {
       });
 
   int current_degree = degree;
-  auto engine = make_engine(current_degree);
   std::mutex mutex;
 
-  server.Get("/api/v1/health", [](const httplib::Request&, httplib::Response& response) -> void {
-    write_response(response, health_response());
-  });
+  // Optional inspection of an already published, immutable heap directory.
+  // It is separate from demo storage and does not pretend to assemble a database.
+  std::optional<std::filesystem::path> page_root;
+  if (const char* raw = std::getenv("KRAVIDB_PAGE_ROOT"); raw != nullptr && *raw != '\0') {
+    if (!std::filesystem::is_directory(raw)) {
+      log_line("KRAVIDB_PAGE_ROOT must name an existing published relation directory");
+      return 1;
+    }
+    page_root = std::filesystem::canonical(raw);
+  }
+  configure_cors(server, page_root.has_value());
+  auto engine = page_root ? std::unique_ptr<storage::StorageEngine>{} : make_engine(current_degree);
 
   server.Get(
-      "/api/v1/config",
-      [&current_degree, &mutex](const httplib::Request&, httplib::Response& response) -> void {
+      "/api/v1/health", [&page_root](const httplib::Request&, httplib::Response& response) -> void {
+        write_response(response, page_root ? ApiResponse{.body = page_service_metadata(*page_root)}
+                                           : health_response());
+      });
+
+  server.Get("/api/v1/config",
+             [&current_degree, &mutex, &page_root](const httplib::Request&,
+                                                   httplib::Response& response) -> void {
+               const std::scoped_lock lock{mutex};
+               write_response(response, page_root
+                                            ? ApiResponse{.body = page_service_metadata(*page_root)}
+                                            : config_response(current_degree));
+             });
+
+  server.Get(
+      R"(/api/v1/pages/(\d+))",
+      [&page_root, &mutex](const httplib::Request& request, httplib::Response& response) -> void {
         const std::scoped_lock lock{mutex};
-        write_response(response, config_response(current_degree));
+        if (!page_root) {
+          write_response(
+              response,
+              ApiResponse{.status = http_not_found,
+                          .body = R"({"message":"physical page service not configured"})"});
+          return;
+        }
+        // A fresh source/buffer avoids showing stale bytes after an offline
+        // generation replacement, and opens no relation for writing.
+        storage::DirectoryPageSource source{*page_root};
+        storage::NoopWal wal;
+        storage::ClockSweepBufferPool pool{1, source, wal};
+        write_response(response,
+                       physical_page_response(pool, source, request.get_param_value("relation"),
+                                              request.matches.str(1)));
       });
 
   server.Post("/api/v1/config",

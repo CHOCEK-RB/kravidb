@@ -128,6 +128,9 @@ jobs:
 
           test "$(curl -fsS -X POST "http://127.0.0.1:$port/api/v1/reset")" = '{"status":"ok"}'
 
+      - name: Physical page API smoke test
+        run: python3 scripts/test_physical_pages_api.py build/linux/x86_64/debug/kravidb_api
+
       - name: Configure and build (Release mode)
         run: |
           xmake f -y -c -m release --toolchain=clang --sdk=/usr/lib/llvm-22 --runtimes=c++_shared --ldflags=-lc++abi

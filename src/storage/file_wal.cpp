@@ -249,7 +249,7 @@ auto parse_segment_name(std::string_view name, std::uint32_t timeline)
 
 }  // namespace
 
-namespace detail {
+namespace wal_detail {
 
 /// \brief Minimal platform file handle with positional I/O.
 class OsFile {
@@ -442,7 +442,7 @@ auto fsync_directory(const std::filesystem::path& directory) -> void {
 #endif
 }
 
-}  // namespace detail
+}  // namespace wal_detail
 
 class FileWal::Impl {
   public:
@@ -536,7 +536,7 @@ class FileWal::Impl {
       removed = removed || erased;
     }
     if (removed) {
-      detail::fsync_directory(directory_);
+      wal_detail::fsync_directory(directory_);
     }
   }
 
@@ -963,7 +963,7 @@ public:
     return lsn + (static_cast<LSN>(segment_size_) - offset);
   }
 
-  auto ensure_long_header(detail::OsFile& file) -> void {
+  auto ensure_long_header(wal_detail::OsFile& file) -> void {
     std::array<std::byte, wal_long_page_header_size> bytes{};
     file.read_at(bytes, 0);
     const auto page = decode_page_header(bytes);
@@ -991,7 +991,7 @@ public:
                        static_cast<std::uint32_t>(index));
   }
 
-  auto open_segment(std::uint64_t index, bool create) -> detail::OsFile* {
+  auto open_segment(std::uint64_t index, bool create) -> wal_detail::OsFile* {
     const auto existing = files_.find(index);
     if (existing != files_.end()) {
       return existing->second.get();
@@ -1001,7 +1001,7 @@ public:
     if (!create && !existed) {
       return nullptr;
     }
-    auto file = detail::OsFile::open(path, create);
+    auto file = wal_detail::OsFile::open(path, create);
     if (file == nullptr) {
       return nullptr;
     }
@@ -1014,7 +1014,7 @@ public:
         ensure_long_header(*file);
       }
       if (!existed) {
-        detail::fsync_directory(directory_);
+        wal_detail::fsync_directory(directory_);
       }
     }
     auto [position, inserted] = files_.try_emplace(index, std::move(file));
@@ -1406,7 +1406,7 @@ public:
   std::uint32_t timeline_{0};
   std::size_t segment_size_{0};
   mutable std::mutex mutex_;
-  std::map<std::uint64_t, std::unique_ptr<detail::OsFile>> files_;
+  std::map<std::uint64_t, std::unique_ptr<wal_detail::OsFile>> files_;
   std::vector<std::byte> buffer_;
   std::vector<std::byte> read_storage_;
   std::vector<PendingRecord> pending_;

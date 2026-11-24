@@ -362,9 +362,10 @@ class FileRelationFile::Impl {
         }
         const auto suffix = std::string_view{filename}.substr(segment_prefix.size());
         // NOLINTNEXTLINE(bugprone-suspicious-stringview-data-usage)
-        const auto [end, error] = std::from_chars(suffix.data(), suffix.end(), segment);
+        const auto last = std::to_address(suffix.end());
+        const auto [end, error] = std::from_chars(suffix.data(), last, segment);
         // NOLINTNEXTLINE(bugprone-invalid-enum-default-initialization)
-        if (error != std::errc{} || end != suffix.end()) {
+        if (error != std::errc{} || end != last) {
           continue;
         }
       }
