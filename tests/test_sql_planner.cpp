@@ -10,6 +10,7 @@ using namespace kravidb::storage;
 
 constexpr RelationStats table_stats{.pages = 1000, .tuples = 10000};
 constexpr PlannerIndex primary_index{.oid = 42, .first_attnum = 1, .unique = true, .pages = 16};
+constexpr std::uint32_t balance_precision = 5;
 
 auto query_for(std::string_view sql) -> SqlResult<Query> {
   SchemaCatalog catalog;
@@ -20,7 +21,7 @@ auto query_for(std::string_view sql) -> SqlResult<Query> {
                                            {.name = "name", .type_oid = varchar_oid},
                                            {.name = "balance",
                                             .type_oid = numeric_oid,
-                                            .typmod = encode_typmod(5, 2)}},
+                                             .typmod = encode_typmod(balance_precision, 2)}},
                             .primary_key = "id"}));
   return prepare_query(sql, catalog, transaction);
 }
