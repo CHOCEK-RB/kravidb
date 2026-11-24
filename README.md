@@ -310,6 +310,25 @@ La descripción completa está en [`semantic_analyzer/README.md`](semantic_analy
 
 ## 🌳 Árbol B y Grado $t$
 
+### Scan de heap publicado (read-only)
+
+`storage.heap_scan` expone `HeapScan` sobre `BufferPool` y `PageSource`.
+`next()` devuelve un `TupleTableSlot` dueño de sus valores (`BIGINT`, `VARCHAR`,
+`DECIMAL` exacto y `NULL`), con header y TID físico. El slot sigue siendo válido
+después de liberar o reemplazar la página del buffer.
+
+El scan recorre bloques y slots en orden físico, omite páginas vacías y entradas
+`unused`/`dead`, valida checksum y layout, y toma locks compartidos. Su contrato
+es una generación **publicada e inmutable** durante todo el recorrido; no
+implementa snapshots MVCC ni permite inferir el estado de transacciones.
+Rechaza redirects o `t_xmax != 0` con `0A000`, y tuplas malformadas o cuyo
+`t_ctid` no apunta a sí mismo con `XX001`. Los slots son base cero.
+
+`HeapScan::stats()` cuenta solicitudes de páginas al buffer, items examinados
+y filas devueltas. Las solicitudes no se presentan como lecturas físicas:
+los hits/misses reales están en `BufferPool::stats()`. El loader de generaciones
+se integrará con este contrato cuando esté disponible (#43).
+
 El índice implementa un Árbol B conforme a la especificación clásica de Cormen, Leiserson, Rivest y Stein (**CLRS**), parametrizado por su grado mínimo $t \ge 2$:
 
 - Cada nodo interno contiene entre $t - 1$ y $2t - 1$ claves ordenadas, y entre $t$ y $2t$ punteros a hijos.

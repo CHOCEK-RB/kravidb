@@ -39,6 +39,9 @@ export import storage.page;
 /// \brief Physical heap tuple (`HeapTuple`, `HeapTupleHeader`, `ItemPointerData`).
 export import storage.heap_tuple;
 
+/// \brief Read-only heap scan and owned row slot (`HeapScan`, `TupleTableSlot`).
+export import storage.heap_scan;
+
 /// \brief Page source contract and in-memory adapter (`PageSource`, `MemoryPageSource`).
 export import storage.page_source;
 
