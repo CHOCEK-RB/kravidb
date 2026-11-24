@@ -55,7 +55,7 @@ constexpr std::array<std::pair<std::string_view, Keyword>, 38> keyword_table{
 }
 
 [[nodiscard]] auto keyword_from_text(std::string_view text) -> Keyword {
-  const auto* const match = std::ranges::find_if(
+  const auto match = std::ranges::find_if(
       keyword_table, [text](const auto& entry) -> bool { return entry.first == text; });
   return match == keyword_table.end() ? Keyword::none : match->second;
 }
