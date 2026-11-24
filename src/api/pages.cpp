@@ -32,6 +32,8 @@ auto page_hex(const storage::Page& page) -> std::string {
 auto physical_page_to_json(const storage::Page& page, storage::RelFileNode relation,
                            storage::BlockNumber block) -> std::string {
   if (!page.validate()) {
+    // Imported exception inheritance is not visible to some clang-tidy versions.
+    // NOLINTNEXTLINE(bugprone-std-exception-baseclass)
     throw std::invalid_argument{"physical page checksum or layout is invalid"};
   }
   const auto header = page.header();
@@ -53,6 +55,8 @@ auto physical_page_to_json(const storage::Page& page, storage::RelFileNode relat
   return json;
 }
 
+// These two text IDs mirror the HTTP relation parameter and block path.
+// NOLINTBEGIN(bugprone-easily-swappable-parameters)
 auto physical_page_response(storage::BufferPool& pool, const storage::PageSource& source,
                             std::string_view relation_text, std::string_view block_text)
     -> ApiResponse {
@@ -82,6 +86,7 @@ auto physical_page_response(storage::BufferPool& pool, const storage::PageSource
     return page_error(http_internal_error, "58030", error.what());
   }
 }
+// NOLINTEND(bugprone-easily-swappable-parameters)
 
 auto page_service_metadata(const std::filesystem::path& root) -> std::string {
   return std::format(R"({{"status":"ok","mode":"readonly_pages","data_dir":{},"page_size":{}}})",

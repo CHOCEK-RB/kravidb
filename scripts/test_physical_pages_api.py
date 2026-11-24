@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Smoke test against a real API process and a checksummed on-disk page."""
+"""Smoke test using an API binary and Python running on the same OS."""
 
 import argparse
 import json
@@ -54,14 +54,8 @@ def main():
         original = fixture_page()
         path.write_bytes(original)
         env = os.environ.copy()
-        native_root = root
-        if binary.suffix.lower() == ".exe" and os.name != "nt":
-            native_root = subprocess.check_output(["wslpath", "-w", root], text=True).strip()
-        env["KRAVIDB_PAGE_ROOT"] = native_root
+        env["KRAVIDB_PAGE_ROOT"] = root
         env["KRAVIDB_BIND"] = "127.0.0.1"
-        # WSL only forwards variables explicitly named in WSLENV to Windows.
-        if binary.suffix.lower() == ".exe" and os.name != "nt":
-            env["WSLENV"] = env.get("WSLENV", "") + ":KRAVIDB_PAGE_ROOT:KRAVIDB_BIND"
         process = subprocess.Popen(
             [str(binary), str(port)], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT
         )
