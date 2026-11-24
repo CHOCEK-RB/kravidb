@@ -321,13 +321,13 @@ auto parse_int(std::string_view text) -> std::optional<std::int64_t> {
   }
 
   std::int64_t value = 0;
-  const auto begin = std::next(text.begin(), static_cast<std::ptrdiff_t>(start));
-  const auto result = std::from_chars(begin, text.end(), value);
+  const auto begin = std::to_address(std::next(text.begin(), static_cast<std::ptrdiff_t>(start)));
+  const auto result = std::from_chars(begin, std::to_address(text.end()), value);
   // 0 = no error. std::errc{} is avoided because clang-tidy flags it under libc++.
   if (static_cast<int>(result.ec) != 0 || result.ptr == begin) {
     return std::nullopt;
   }
-  const auto end = static_cast<std::size_t>(result.ptr - text.begin());
+  const auto end = static_cast<std::size_t>(result.ptr - text.data());
   if (skip_whitespace(text, end) != text.size()) {
     return std::nullopt;
   }

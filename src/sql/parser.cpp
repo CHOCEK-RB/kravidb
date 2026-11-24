@@ -68,7 +68,7 @@ constexpr std::array<UnsupportedWord, 5> unsupported_predicate_words{
 template <std::size_t Size>
 [[nodiscard]] auto find_unsupported(const std::array<UnsupportedWord, Size>& table,
                                     std::string_view word) -> std::optional<std::string_view> {
-  const auto* const match = std::ranges::find_if(
+  const auto match = std::ranges::find_if(
       table, [word](const UnsupportedWord& entry) -> bool { return entry.word == word; });
   if (match == table.end()) {
     return std::nullopt;

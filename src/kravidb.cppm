@@ -84,6 +84,9 @@ export import sql.parser;
 /// \brief Analyzed query model (`Query`, `TypedExpr`, `SqlType`).
 export import sql.query;
 
+/// \brief Cost-based read planner and diagnostic tree (`plan_select`, `explain_plan`).
+export import sql.planner;
+
 /// \brief SELECT analyzer and front-end entry point (`analyze`, `prepare_query`).
 export import sql.analyzer;
 

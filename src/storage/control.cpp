@@ -189,16 +189,12 @@ auto write_all(int descriptor, std::span<const std::byte> bytes, const std::file
 }
 #endif
 
+#if !defined(_WIN32)
 auto remove_file(const std::filesystem::path& path) noexcept -> void {
   std::error_code error;
   static_cast<void>(std::filesystem::remove(path, error));
 }
 
-#if defined(_WIN32)
-auto fsync_directory(const std::filesystem::path& directory) -> void {
-  static_cast<void>(directory);
-}
-#else
 auto fsync_directory(const std::filesystem::path& directory) -> void {
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
   const int descriptor = ::open(directory.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);

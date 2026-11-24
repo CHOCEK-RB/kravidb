@@ -310,6 +310,26 @@ La descripción completa está en [`semantic_analyzer/README.md`](semantic_analy
 
 ## 🌳 Árbol B y Grado $t$
 
+### Planner de lectura
+
+`sql.planner::plan_select` recibe un `Query` ya analizado, estadísticas de páginas
+y tuplas, y descriptores de índices **publicados y utilizables** proporcionados
+por el dueño del almacenamiento. Devuelve un plan diagnóstico
+`Projection -> Filter -> SeqScan|IndexScan` con costos y filas estimadas;
+`explain_plan` lo presenta como texto (no como SQL).
+
+Solo se usan comparaciones de igualdad/rango sobre el primer atributo del índice,
+entre columnas y constantes BIGINT/VARCHAR del mismo tipo. Se normalizan
+comparaciones invertidas y se conservan los filtros completos para revalidación.
+No se extraen condiciones parciales de `OR`, `<>`, NULL ni coerciones DECIMAL.
+Un índice declarado en el catálogo no implica por sí solo un índice físico.
+La conexión con índices durables depende de #45; este módulo no ejecuta scans.
+
+El modelo usa costo secuencial de página 1, página aleatoria 4 y CPU por tupla
+0.01. La selectividad de igualdad única es `1/N`, la no única `0.01`, y la de
+rango `1/3`. Son estimaciones, no mediciones; una tabla pequeña puede favorecer
+`SeqScan` incluso cuando existe índice.
+
 El índice implementa un Árbol B conforme a la especificación clásica de Cormen, Leiserson, Rivest y Stein (**CLRS**), parametrizado por su grado mínimo $t \ge 2$:
 
 - Cada nodo interno contiene entre $t - 1$ y $2t - 1$ claves ordenadas, y entre $t$ y $2t$ punteros a hijos.
